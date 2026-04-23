@@ -7,9 +7,6 @@
 library(tidyverse)
 library(wildlifeR)
 library(bbsBayes2)
-library(here)
-
-here::i_am("0_prepare_aou.R")
 
 if (!dir.exists("data")) dir.create("data")
 
@@ -50,6 +47,31 @@ spp_df <- spp_df %>%
       TRUE        ~ NA_character_
     )
   )
+
+## Manually fill in AOU numbers for species missing from wildlifeR
+manual_aou <- tribble(
+  ~Common.Name,            ~spp.num,
+  "Dark-eyed Junco",       5677,
+  "Northern Flicker",      4123,
+  "Northwestern Crow",     4880,
+  "Red-faced Cormorant",   1207,
+  "Snow Goose",            1690,
+  "Yellow-rumped Warbler",  6556
+)
+
+for (i in seq_len(nrow(manual_aou))) {
+  idx <- which(spp_df$Common.Name == manual_aou$Common.Name[i])
+  if (length(idx) > 0) {
+    spp_df$spp.num[idx] <- manual_aou$spp.num[i]
+    # Re-check against bbsBayes2
+    if (manual_aou$spp.num[i] %in% bbs_species$aou) {
+      spp_df$in_bbs_aou[idx] <- TRUE
+      spp_df$in_bbs[idx] <- TRUE
+      spp_df$bbs_english[idx] <- bbs_species$english[match(manual_aou$spp.num[i], bbs_species$aou)]
+    }
+    cat("  Manual AOU set:", manual_aou$Common.Name[i], "->", manual_aou$spp.num[i], "\n")
+  }
+}
 
 cat("\nTotal species:", nrow(spp_df), "\n")
 cat("Matched by AOU number:", sum(spp_df$in_bbs_aou, na.rm = TRUE), "\n")
