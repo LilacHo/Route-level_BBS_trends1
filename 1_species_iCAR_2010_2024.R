@@ -13,7 +13,9 @@ library(sf)
 library(spdep)
 library(concaveman)
 library(patchwork)
+library(here)
 
+here::i_am("1_species_iCAR_2010_2024.R")
 source("functions/neighbours_define_voronoi.R")
 source("functions/posterior_summary_functions.R")
 
@@ -28,41 +30,24 @@ firstYear <- 2010
 lastYear <- 2024
 
 ## =============================================================================
-## Load species list and filter to grassland birds
+## Load pre-built species list with AOU numbers (from 0_prepare_aou.R)
 ## =============================================================================
 
-spp_df <- read.csv("data/spp_names_codes_group.csv", stringsAsFactors = FALSE)
+spp_df <- read.csv("data/spp_names_codes_group_aou.csv", stringsAsFactors = FALSE)
+
 grassland_spp <- spp_df %>%
-  filter(Group == "grasslands") %>%
+  filter(Group == "grasslands", in_bbs == TRUE) %>%
   distinct(Common.Name, .keep_all = TRUE) %>%
   arrange(Common.Name)
 
 cat("=== Grassland species iCAR model fitting ===\n")
 cat("Period:", firstYear, "-", lastYear, "\n")
-cat("Grassland species found in CSV:", nrow(grassland_spp), "\n\n")
+cat("Grassland species to fit:", nrow(grassland_spp), "\n\n")
 
-## =============================================================================
-## Load BBS data once and get available species list
-## =============================================================================
+# Use the bbsBayes2 english name for stratify()
+species_list <- grassland_spp$bbs_english
 
 strat_data <- load_bbs_data()
-bbs_species <- strat_data$species %>%
-  filter(unid_combined == TRUE)
-
-# Check which grassland species exist in bbsBayes2
-grassland_spp <- grassland_spp %>%
-  mutate(in_bbs = Common.Name %in% bbs_species$english)
-
-cat("Species available in bbsBayes2:",
-    sum(grassland_spp$in_bbs), "/", nrow(grassland_spp), "\n")
-
-if (any(!grassland_spp$in_bbs)) {
-  cat("\nSpecies NOT found in bbsBayes2 (will be skipped):\n")
-  cat(paste(" -", grassland_spp$Common.Name[!grassland_spp$in_bbs]), sep = "\n")
-  cat("\n")
-}
-
-species_list <- grassland_spp$Common.Name[grassland_spp$in_bbs]
 
 # Compile the Stan model once (reused for all species)
 mod.file <- "models/slope_iCAR_route_NB_New.stan"
@@ -70,9 +55,6 @@ slope_model <- cmdstan_model(mod.file, stanc_options = list("O1"))
 
 cv_mod.file <- "models/slope_iCAR_route_NB_cv.stan"
 cv_model <- cmdstan_model(cv_mod.file, stanc_options = list("O1"))
-
-# Track results across species
-all_results <- NULL
 
 ## =============================================================================
 ## SPECIES LOOP
@@ -212,12 +194,13 @@ for (species in species_list) {
 
     stanfit <- slope_model$sample(
       data = stan_data,
-      refresh = 200,
-      chains = 2, iter_sampling = 500, iter_warmup = 500,
-      parallel_chains = 2,
+      refresh = 400,
+      chains = 4, iter_sampling = 2000, iter_warmup = 2000,
+      parallel_chains = 4,
       adapt_delta = 0.8,
       max_treedepth = 10,
-      show_exceptions = FALSE
+      show_exceptions = FALSE,
+      save_cmdstan_config = TRUE
     )
 
     summ <- stanfit$summary()
@@ -278,12 +261,13 @@ for (species in species_list) {
     if (stan_data_cv[["ncounts_pred"]] > 0) {
       cv_fit <- cv_model$sample(
         data = stan_data_cv,
-        refresh = 100,
-        chains = 2, iter_sampling = 500, iter_warmup = 500,
-        parallel_chains = 2,
+        refresh = 400,
+        chains = 3, iter_sampling = 1000, iter_warmup = 1000,
+        parallel_chains = 3,
         adapt_delta = 0.8,
         max_treedepth = 10,
-        show_exceptions = FALSE
+        show_exceptions = FALSE,
+        save_cmdstan_config = TRUE
       )
 
       log_lik_full <- posterior_samples(fit = cv_fit, parm = "log_lik", dims = "i")
@@ -357,28 +341,25 @@ for (species in species_list) {
     print(p_trend)
     dev.off()
 
-    ## --- Collect summary row ---
-    sp_result <- data.frame(
-      species     = species,
-      code        = grassland_spp$Code[grassland_spp$Common.Name == species][1],
-      n_routes    = max(new_data$routeF),
-      n_obs       = nrow(new_data),
-      median_trend = round(median(trend_map_data$trend), 3),
-      n_declining = sum(trend_map_data$trend < -0.5),
-      n_increasing = sum(trend_map_data$trend > 0.5),
-      n_stable    = sum(trend_map_data$trend >= -0.5 & trend_map_data$trend <= 0.5),
-      max_rhat    = round(max_rhat, 4),
-      min_ess     = round(min_ess, 0),
-      cv_lppd     = round(cv_lppd, 4),
-      cv_spearman = round(cv_cor, 3),
-      fit_minutes = fit_time,
-      stringsAsFactors = FALSE
+    ## --- Save per-species results ---
+    conv_summary <- data.frame(
+      max_rhat = round(max_rhat, 4),
+      min_ess  = round(min_ess, 0)
     )
 
-    all_results <- bind_rows(all_results, sp_result)
+    save(list = c("summ", "conv_summary", "beta_summ", "alpha_summ",
+                  "trend_map_data", "sd_alpha_prior",
+                  "cv_lppd", "cv_cor"),
+         file = paste0(output_dir, "/", species_f, "_iCAR_results_",
+                       firstYear, "_", lastYear, ".RData"))
+
+    if (exists("cv_results")) {
+      saveRDS(cv_results, paste0(output_dir, "/", species_f,
+                                  "_iCAR_cv_results_", ynext, ".rds"))
+    }
 
     cat("  Median trend:", round(median(trend_map_data$trend), 2), "% per year\n")
-    cat("  Done.\n")
+    cat("  Outputs saved for", species, "\n")
 
   }, error = function(e) {
     cat("  ERROR:", conditionMessage(e), "\n")
@@ -387,53 +368,4 @@ for (species in species_list) {
 
 }  # end species loop
 
-## =============================================================================
-## Summary table across all species
-## =============================================================================
-
-cat("\n\n================================================================\n")
-cat("  ALL SPECIES SUMMARY\n")
-cat("================================================================\n\n")
-
-if (!is.null(all_results) && nrow(all_results) > 0) {
-  print(as.data.frame(all_results), row.names = FALSE)
-
-  saveRDS(all_results, paste0(output_dir, "/grassland_iCAR_summary_",
-                               firstYear, "_", lastYear, ".rds"))
-  write.csv(all_results, paste0(output_dir, "/grassland_iCAR_summary_",
-                                 firstYear, "_", lastYear, ".csv"),
-            row.names = FALSE)
-
-  # Summary visualization
-  p_summary <- ggplot(all_results,
-                       aes(x = reorder(species, median_trend),
-                           y = median_trend)) +
-    geom_col(aes(fill = median_trend > 0), alpha = 0.8, show.legend = FALSE) +
-    scale_fill_manual(values = c("TRUE" = "#1a9850", "FALSE" = "#d73027")) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    coord_flip() +
-    labs(title = paste("Grassland bird trends — iCAR model", firstYear, "-", lastYear),
-         subtitle = paste(nrow(all_results), "species"),
-         x = "", y = "Median annual % trend") +
-    theme_bw() +
-    theme(text = element_text(family = "serif", size = 12))
-
-  pdf(paste0("figures/grassland_species_trends_summary_",
-             firstYear, "_", lastYear, ".pdf"),
-      width = 10, height = max(6, nrow(all_results) * 0.35))
-  print(p_summary)
-  dev.off()
-
-  png(paste0("figures/grassland_species_trends_summary_",
-             firstYear, "_", lastYear, ".png"),
-      width = 10, height = max(6, nrow(all_results) * 0.35),
-      units = "in", res = 300)
-  print(p_summary)
-  dev.off()
-
-  cat("\nSummary table and figure saved.\n")
-} else {
-  cat("No species were successfully fitted.\n")
-}
-
-cat("\nDone.\n")
+cat("\nAll species processed.\n")

@@ -7,6 +7,9 @@
 library(tidyverse)
 library(wildlifeR)
 library(bbsBayes2)
+library(here)
+
+here::i_am("0_prepare_aou.R")
 
 if (!dir.exists("data")) dir.create("data")
 
