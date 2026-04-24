@@ -19,6 +19,12 @@ here::i_am("1_species_iCAR_2010_2024.R")
 source("functions/neighbours_define_voronoi.R")
 source("functions/posterior_summary_functions.R")
 
+# Ensure cmdstanr writes output to CSV (default) and set output_dir for temp files
+# This avoids the "No CmdStan config files found" error by using
+# output_dir so cmdstanr can find its files
+cmdstanr_output_dir <- file.path(tempdir(), "cmdstan_output")
+if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive = TRUE)
+
 output_dir <- "output"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 if (!dir.exists("data")) dir.create("data")
@@ -200,7 +206,7 @@ for (species in species_list) {
       adapt_delta = 0.8,
       max_treedepth = 10,
       show_exceptions = FALSE,
-      save_cmdstan_config = TRUE
+      output_dir = cmdstanr_output_dir
     )
 
     summ <- stanfit$summary()
@@ -267,7 +273,7 @@ for (species in species_list) {
         adapt_delta = 0.8,
         max_treedepth = 10,
         show_exceptions = FALSE,
-        save_cmdstan_config = TRUE
+        output_dir = cmdstanr_output_dir
       )
 
       log_lik_full <- posterior_samples(fit = cv_fit, parm = "log_lik", dims = "i")
