@@ -1,19 +1,20 @@
 ## =============================================================================
-## Grassland birds: iCAR route-level trend model -> per-route trend CSVs
+## Grassland birds: iCAR route-level trend model (fitting only)
 ## Time period: 2010-2024
 ##
-## Restructured to mirror 1_CH_no_habitat_routes.R:
+## Structure mirrors 1_CH_no_habitat_routes.R:
 ##   - Settings block
 ##   - fit_species(): full data-prep + model-fit pipeline for one species
-##   - Main loop: load-or-fit per species, extract per-route posterior means,
-##     write one CSV per species, collect a combined results / diagnostics table
+##   - Main loop: fit per species, save the fit + stan_data, collect diagnostics
 ##
-## Output (one CSV per species):
-##   output/species_routes/<group>_<species>_route_trends.csv with columns:
-##     species, species_code, group, route, routeF, strata_name,
-##     latitude, longitude, trend, trend_lci, trend_uci, rel_abundance
+## This script FITS the models and saves, per species:
+##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds
+##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds
+##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
 ##
-## Trend maps are generated separately by 2_plot_iCAR_trend_maps.R.
+## Per-route trend CSVs are generated separately by
+## 2a_generate_route_trend_csvs.R (reads the saved fits above). Trend maps by
+## 2b_plot_iCAR_trend_maps.R (reads those CSVs).
 ##
 ## Diagnostics (Rhat, ESS, leave-future-out CV) are kept: printed to console,
 ## stored per species, and written to a combined diagnostics CSV at the end.
@@ -49,8 +50,8 @@ dt         <- lastYear - firstYear
 
 strat <- "bbs_usgs"
 
-# Re-fit control: if TRUE, ignore existing per-species output CSVs and re-run
-# the fit (needed after changing the model, priors, or data thresholds).
+# Re-fit control: if TRUE, ignore existing fits and re-run the model (needed
+# after changing the model, priors, or data thresholds).
 force_refit <- TRUE
 
 # Output directories
@@ -59,8 +60,6 @@ if (!dir.exists(output_dir)) dir.create(output_dir)
 if (!dir.exists(here::here("data"))) dir.create(here::here("data"))
 if (!dir.exists(here::here("data", "maps"))) dir.create(here::here("data", "maps"), recursive = TRUE)
 if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", "stan_data"), recursive = TRUE)
-sp_out_dir <- here::here("output", "species_routes")
-if (!dir.exists(sp_out_dir)) dir.create(sp_out_dir, recursive = TRUE)
 
 # Target group species list -----------------------------------------------
 spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
@@ -79,11 +78,6 @@ print(target_spp %>% select(Common.Name, Code, bbs_english))
 # Helper: convert species name to file-safe format ------------------------
 species_to_f <- function(sp) {
   gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
-}
-
-# CSV path for a species
-sp_csv_path <- function(sp_f) {
-  file.path(sp_out_dir, paste0(land_cover, "_", sp_f, "_route_trends.csv"))
 }
 
 # Compile the Stan models once (reused across species) --------------------
@@ -164,7 +158,7 @@ fit_species <- function(species, species_bbs, species_f, land_cover, strat,
     strata_map      = realized_strata_map,
     concavity       = 1,
     save_plot_data  = TRUE,
-    plot_dir        = "data"
+    plot_dir        = here::here("data", "maps")
   )
 
   cat("    Routes:", max(new_data$routeF),
@@ -201,10 +195,10 @@ fit_species <- function(species, species_bbs, species_f, land_cover, strat,
 
   # Save stan_data ---------------------------------------------------------
   sp_data_file <- here::here("data", "stan_data",
-                             paste0(species_f, "_iCAR_New_",
+                             paste0(species_f, "_",
                                     firstYear, "_", lastYear, "_stan_data.RData"))
   save(list = c("stan_data", "new_data", "route_map", "realized_strata_map",
-                "car_stan_dat", "sd_alpha_prior", "land_cover"),
+                "car_stan_dat", "sd_alpha_prior"),
        file = sp_data_file)
 
   # Fit iCAR model ---------------------------------------------------------
@@ -339,102 +333,46 @@ for (i in seq_len(nrow(target_spp))) {
   cat("  [", i, "/", nrow(target_spp), "]", sp, "\n")
   cat("================================================================\n")
 
-  # Skip if the per-species output CSV already exists
-  sp_csv <- sp_csv_path(sp_f)
-  if (file.exists(sp_csv) && !force_refit) {
-    cat("  Skipping (already exists):", basename(sp_csv), "\n")
-    next
-  }
-
-  # Paths to pre-fitted output
+  # Skip if this species' fit already exists
   out_base       <- paste0(sp_f, "_iCAR_New_", firstYear, "_", lastYear)
   summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
   stan_data_file <- here::here("data", "stan_data",
-                               paste0(out_base, "_stan_data.RData"))
-
-  # If both files exist AND we are not forcing a re-fit, load them; otherwise
-  # run the full data-prep + model-fit pipeline.
-  diagnostics <- NULL
+                               paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))
   if (file.exists(summ_file) && file.exists(stan_data_file) && !force_refit) {
-    cat("  Loading existing fit\n")
-    summ <- readRDS(summ_file)
-    load(stan_data_file)  # loads route_map (sf), realized_strata_map, new_data
-  } else {
-    if (force_refit) {
-      cat("  force_refit = TRUE — re-running data prep + model fit\n")
-    } else {
-      cat("  No existing fit found — running data prep + model fit\n")
-    }
-    fit_result <- tryCatch(
-      fit_species(species = sp,
-                  species_bbs = sp_bbs,
-                  species_f = sp_f,
-                  land_cover = land_cover,
-                  strat = strat,
-                  firstYear = firstYear,
-                  lastYear = lastYear,
-                  slope_model = slope_model,
-                  cv_model = cv_model),
-      error = function(e) {
-        message("  [ERROR] Failed for ", sp, ": ", conditionMessage(e))
-        return(NULL)
-      }
-    )
-    if (is.null(fit_result)) next
-    summ                <- fit_result$summ
-    route_map           <- fit_result$route_map
-    realized_strata_map <- fit_result$realized_strata_map
-    new_data            <- fit_result$new_data
-    diagnostics         <- fit_result$diagnostics
+    cat("  Skipping (already fitted):", basename(summ_file), "\n")
+    next
   }
 
-  # Extract beta (slope) and alpha (intercept) per route -------------------
-  beta_summ <- summ %>%
-    filter(str_detect(variable, "^beta\\[")) %>%
-    transmute(routeF    = as.integer(str_extract(variable, "\\d+")),
-              mean      = mean,
-              lci       = q5,
-              uci       = q95,
-              trend     = 100 * (exp(mean) - 1),
-              trend_lci = 100 * (exp(q5) - 1),
-              trend_uci = 100 * (exp(q95) - 1))
+  # Run the full data-prep + model-fit pipeline
+  diagnostics <- NULL
+  fit_result <- tryCatch(
+    fit_species(species = sp,
+                species_bbs = sp_bbs,
+                species_f = sp_f,
+                land_cover = land_cover,
+                strat = strat,
+                firstYear = firstYear,
+                lastYear = lastYear,
+                slope_model = slope_model,
+                cv_model = cv_model),
+    error = function(e) {
+      message("  [ERROR] Failed for ", sp, ": ", conditionMessage(e))
+      return(NULL)
+    }
+  )
+  if (is.null(fit_result)) next
+  diagnostics <- fit_result$diagnostics
 
-  alpha_summ <- summ %>%
-    filter(str_detect(variable, "^alpha\\[")) %>%
-    transmute(routeF        = as.integer(str_extract(variable, "\\d+")),
-              rel_abundance = exp(mean))
-
-  # Get lat/lon and strata from route_map (sf object)
-  route_info <- route_map %>%
-    st_transform(4326) %>%
-    mutate(longitude = st_coordinates(.)[, 1],
-           latitude  = st_coordinates(.)[, 2]) %>%
-    st_drop_geometry() %>%
-    select(route, routeF, strata_name = strat, latitude, longitude)
-
-  # Per-route trend table --------------------------------------------------
-  route_trends <- beta_summ %>%
-    left_join(alpha_summ, by = "routeF") %>%
-    left_join(route_info, by = "routeF") %>%
-    mutate(species      = sp,
-           species_code = sp_code,
-           group        = land_cover) %>%
-    select(species, species_code, group, route, routeF, strata_name,
-           latitude, longitude, trend, trend_lci, trend_uci, rel_abundance)
-
-  results_list[[sp]] <- route_trends
-
-  # Save per-species CSV
-  write.csv(route_trends, sp_csv, row.names = FALSE)
+  results_list[[sp]] <- summ_file
 
   # Diagnostics (kept) -----------------------------------------------------
   if (!is.null(diagnostics)) diagnostics_list[[sp]] <- diagnostics
 
-  # Trend maps are generated separately in 2_plot_iCAR_trend_maps.R from the
-  # per-species CSVs written above.
+  # Per-route trend CSVs are generated separately in
+  # 2a_generate_route_trend_csvs.R from the saved fits; trend maps in
+  # 2b_plot_iCAR_trend_maps.R from those CSVs.
 
-  cat("  Median trend:", round(median(route_trends$trend), 2), "% per year\n")
-  cat("  Done:", nrow(route_trends), "routes ->", basename(sp_csv), "\n")
+  cat("  Done — fit + diagnostics saved for", sp, "\n")
 }
 
 # Combined diagnostics CSV (kept) -----------------------------------------
@@ -449,5 +387,6 @@ if (length(diagnostics_list) > 0) {
 }
 
 cat("\n=== Summary ===\n")
-cat("Species processed this run:", length(results_list), "\n")
-cat("Per-species trend CSVs in:", sp_out_dir, "\n")
+cat("Species fitted this run:", length(results_list), "\n")
+cat("Fits saved in:", output_dir, "\n")
+cat("Next: run 2a_generate_route_trend_csvs.R to build per-route CSVs.\n")

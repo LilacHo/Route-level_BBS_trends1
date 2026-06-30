@@ -9,7 +9,7 @@
 ##          columns: species, species_code, group, route, routeF,
 ##                   latitude, longitude, trend, trend_lci, trend_uci,
 ##                   rel_abundance
-## Output : figures/<species>_iCAR_trend_map_<firstYear>_<lastYear>.png (+ .pdf)
+## Output : output/figures/<species>_iCAR_trend_map_<firstYear>_<lastYear>.png (+ .pdf)
 ## =============================================================================
 
 library(bbsBayes2)
@@ -17,10 +17,9 @@ library(tidyverse)
 library(sf)
 library(here)
 
-here::i_am("2_plot_iCAR_trend_maps.R")
+here::i_am("2b_plot_iCAR_trend_maps.R")
 
 # Settings (match 1_species_iCAR_2010_2024.R) -----------------------------
-land_cover <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2024
 strat      <- "bbs_usgs"
@@ -30,7 +29,7 @@ write_pdf <- TRUE
 
 # Directories
 sp_out_dir <- here::here("output", "species_routes")
-fig_dir    <- here::here("figures")
+fig_dir    <- here::here("output", "figures")
 if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
 
 # Helper: convert species name to file-safe format ------------------------
@@ -48,18 +47,18 @@ trend_colours <- c("#d73027", "#fc8d59", "#fee08b", "#ffffbf",
 # Base strata map (shared across species) ---------------------------------
 strata_map <- load_map(strat)
 
-# Locate per-species CSVs --------------------------------------------------
+# Locate per-species CSVs (written by 2a_generate_route_trend_csvs.R) ------
 csv_files <- list.files(sp_out_dir,
-                        pattern = paste0("^", land_cover, "_.*_route_trends\\.csv$"),
+                        pattern = "_route_trends\\.csv$",
                         full.names = TRUE)
 
 if (length(csv_files) == 0) {
   stop("No route-trend CSVs found in ", sp_out_dir,
-       " — run 1_species_iCAR_2010_2024.R first.")
+       " — run 2a_generate_route_trend_csvs.R first.")
 }
 
 cat("=== Plotting iCAR trend maps ===\n")
-cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
+cat("Period:", firstYear, "-", lastYear, "\n")
 cat("CSVs found:", length(csv_files), "\n")
 
 # ==========================================================================
@@ -121,7 +120,7 @@ for (csv in csv_files) {
     dev.off()
   }
 
-  cat("    Map saved to figures/\n")
+  cat("    Map saved to output/figures/\n")
 }
 
 cat("\n=== Done ===\n")

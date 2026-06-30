@@ -47,3 +47,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Generated model inputs and maps
+data/maps/
+data/stan_data/
+output/*.RData
+
+# Project output
+output/**/*.csv
+output/*.rds
+output/figures/
