@@ -1,8 +1,8 @@
 ## =============================================================================
 ## Generate per-route trend CSVs from fitted iCAR models
-## Time period: 2010-2024
+## Time period: 2010-2025
 ##
-## Reads the per-species model output saved by 1_species_iCAR_2010_2024.R:
+## Reads the per-species model output saved by 1_species_iCAR_2010_2025.R:
 ##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds   (summary)
 ##   data/stan_data/<species>_iCAR_New_<firstYear>_<lastYear>_stan_data.RData
 ##     (loads route_map (sf), new_data, realized_strata_map, ...)
@@ -27,12 +27,12 @@ library(tidyverse)
 library(sf)
 library(here)
 
-here::i_am("2a_generate_route_trend_csvs.R")
+here::i_am("2_generate_route_trend_csvs.R")
 
-# Settings (match 1_species_iCAR_2010_2024.R) -----------------------------
+# Settings (match 1_species_iCAR_2010_2025.R) -----------------------------
 land_cover <- "grasslands"
 firstYear  <- 2010
-lastYear   <- 2024
+lastYear   <- 2025
 
 # Overwrite existing per-species CSVs?
 overwrite <- TRUE
@@ -85,7 +85,7 @@ for (i in seq_len(nrow(target_spp))) {
                                paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))
 
   if (!file.exists(summ_file) || !file.exists(stan_data_file)) {
-    cat("  No fitted output found — run 1_species_iCAR_2010_2024.R first. Skipping.\n")
+    cat("  No fitted output found — run 1_species_iCAR_2010_2025.R first. Skipping.\n")
     next
   }
 

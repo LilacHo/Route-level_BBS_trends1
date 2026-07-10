@@ -1,11 +1,6 @@
 ## =============================================================================
 ## Grassland birds: iCAR route-level trend model (fitting only)
-## Time period: 2010-2024
-##
-## Structure mirrors 1_CH_no_habitat_routes.R:
-##   - Settings block
-##   - fit_species(): full data-prep + model-fit pipeline for one species
-##   - Main loop: fit per species, save the fit + stan_data, collect diagnostics
+## Time period: 2010-2025
 ##
 ## This script FITS the models and saves, per species:
 ##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds
@@ -13,13 +8,14 @@
 ##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
 ##
 ## Per-route trend CSVs are generated separately by
-## 2a_generate_route_trend_csvs.R (reads the saved fits above). Trend maps by
-## 2b_plot_iCAR_trend_maps.R (reads those CSVs).
+## 2_generate_route_trend_csvs.R (reads the saved fits above). Trend maps by
+## 3_plot_iCAR_trend_maps.R (reads those CSVs).
 ##
 ## Diagnostics (Rhat, ESS, leave-future-out CV) are kept: printed to console,
 ## stored per species, and written to a combined diagnostics CSV at the end.
 ##
-## Based on Fitting_new_iCAR_slope_model.R (sum_to_zero_vector parameterization)
+## Adapted from AdamCSmithCWS/Route-level_BBS_trends
+## Based on 1alt_Species_data_prep_bbsBayes2.R, Fitting_new_iCAR_slope_model.R
 ## =============================================================================
 
 library(bbsBayes2)
@@ -31,7 +27,7 @@ library(spdep)
 library(concaveman)
 library(here)
 
-here::i_am("1_species_iCAR_2010_2024.R")
+here::i_am("1_species_iCAR_2010_2025.R")
 source("functions/neighbours_define_voronoi.R")
 source("functions/posterior_summary_functions.R")
 
@@ -45,7 +41,7 @@ if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive 
 land_cover <- "grasslands"   # target group: must match a value in the
                              # 'Group' column of spp_names_codes_group_aou.csv
 firstYear  <- 2010
-lastYear   <- 2024
+lastYear   <- 2025
 dt         <- lastYear - firstYear
 
 strat <- "bbs_usgs"
@@ -369,8 +365,8 @@ for (i in seq_len(nrow(target_spp))) {
   if (!is.null(diagnostics)) diagnostics_list[[sp]] <- diagnostics
 
   # Per-route trend CSVs are generated separately in
-  # 2a_generate_route_trend_csvs.R from the saved fits; trend maps in
-  # 2b_plot_iCAR_trend_maps.R from those CSVs.
+  # 2_generate_route_trend_csvs.R from the saved fits; trend maps in
+  # 3_plot_iCAR_trend_maps.R from those CSVs.
 
   cat("  Done — fit + diagnostics saved for", sp, "\n")
 }
@@ -389,4 +385,4 @@ if (length(diagnostics_list) > 0) {
 cat("\n=== Summary ===\n")
 cat("Species fitted this run:", length(results_list), "\n")
 cat("Fits saved in:", output_dir, "\n")
-cat("Next: run 2a_generate_route_trend_csvs.R to build per-route CSVs.\n")
+cat("Next: run 2_generate_route_trend_csvs.R to build per-route CSVs.\n")
