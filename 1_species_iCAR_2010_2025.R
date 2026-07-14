@@ -44,7 +44,7 @@ firstYear  <- 2010
 lastYear   <- 2025
 dt         <- lastYear - firstYear
 
-strat <- "bbs_usgs"
+strat <- "bcr"
 
 # Re-fit control: if TRUE, ignore existing fits and re-run the model (needed
 # after changing the model, priors, or data thresholds).

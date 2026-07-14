@@ -51,6 +51,7 @@ rsconnect/
 # Generated model inputs and maps
 data/maps/
 data/stan_data/
+data/**/*.tif
 output/*.RData
 
 # Project output

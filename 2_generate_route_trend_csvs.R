@@ -10,14 +10,26 @@
 ## and writes one per-route CSV per species (mirrors output/species_routes
 ## reference layout):
 ##   output/species_routes/<species>_route_trends.csv  with columns:
-##     species, species_code, route, routeF, latitude, longitude,
-##     trend, trend_lci, trend_uci, rel_abundance
+##     species, species_code, route, latitude, longitude,
+##     alpha, beta, trend, trend_lci, trend_uci, rel_abundance
 ##
-## where, per route s:
-##   trend     = 100 * (exp(mean(beta[s]))  - 1)   annual % change
-##   trend_lci = 100 * (exp(q5(beta[s]))    - 1)
-##   trend_uci = 100 * (exp(q95(beta[s]))   - 1)
-##   rel_abundance = exp(mean(alpha[s]))
+## where, per route s (alpha[s] and beta[s] are the raw Stan posterior means,
+## on the model's log scale; trend and rel_abundance are their back-transformed,
+## interpretable versions):
+##   alpha         = mean(alpha[s])                the fitted log-scale intercept
+##                                                  (mean log-count) for route s
+##   beta          = mean(beta[s])                 the fitted log-scale slope
+##                                                  (annual rate of change) for route s
+##   trend     = 100 * (exp(beta[s])  - 1)   annual % change, i.e. beta converted
+##                                            from a log-scale slope to a
+##                                            percent-per-year change
+##   trend_lci = 100 * (exp(q5(beta[s]))    - 1)   90% CI lower bound on trend
+##   trend_uci = 100 * (exp(q95(beta[s]))   - 1)   90% CI upper bound on trend
+##   rel_abundance = exp(alpha[s])            relative abundance, i.e. alpha
+##                                            converted from a log-scale mean
+##                                            back to the count scale (expected
+##                                            count for an average observer at
+##                                            the route's fixed year)
 ##
 ## This is a post-processing step only; it does not fit or load any models'
 ## posterior draws beyond the saved summary table.
@@ -92,18 +104,20 @@ for (i in seq_len(nrow(target_spp))) {
   summ <- readRDS(summ_file)
   load(stan_data_file)   # loads route_map (sf), new_data, realized_strata_map, ...
 
-  # Extract beta (slope) per route -> annual % trend + 90% CI --------------
+  # Extract beta (slope) per route -> raw value + annual % trend + 90% CI --
   beta_summ <- summ %>%
     filter(str_detect(variable, "^beta\\[")) %>%
     transmute(routeF    = as.integer(str_extract(variable, "\\d+")),
+              beta      = mean,
               trend     = 100 * (exp(mean) - 1),
               trend_lci = 100 * (exp(q5)   - 1),
               trend_uci = 100 * (exp(q95)  - 1))
 
-  # Extract alpha (intercept) per route -> relative abundance --------------
+  # Extract alpha (intercept) per route -> raw value + relative abundance --
   alpha_summ <- summ %>%
     filter(str_detect(variable, "^alpha\\[")) %>%
     transmute(routeF        = as.integer(str_extract(variable, "\\d+")),
+              alpha         = mean,
               rel_abundance = exp(mean))
 
   # Lat/lon from route_map (sf object) -------------------------------------
@@ -121,8 +135,8 @@ for (i in seq_len(nrow(target_spp))) {
     mutate(species      = sp,
            species_code = sp_code) %>%
     arrange(routeF) %>%
-    select(species, species_code, route, routeF,
-           latitude, longitude, trend, trend_lci, trend_uci, rel_abundance)
+    select(species, species_code, route,
+           latitude, longitude, alpha, beta, trend, trend_lci, trend_uci, rel_abundance)
 
   write.csv(route_trends, sp_csv, row.names = FALSE)
   results_list[[sp]] <- route_trends
