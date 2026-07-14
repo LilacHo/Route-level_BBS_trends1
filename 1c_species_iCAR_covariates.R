@@ -4,10 +4,14 @@
 ##
 ## Variant of 1_species_iCAR_2010_2025.R that adds route-year land-cover
 ## covariates (proportion grassland cover, proportion developed cover, range
-## [0,1]) to the log-linear predictor. For each species, fits THREE models on
-## the same (grassland & developed both non-NA) dataset, so the three are
-## directly comparable:
+## [0,1]) to the log-linear predictor. For each species, fits FOUR models on
+## the SAME reduced dataset (only route-years where both grassland and
+## developed are non-NA — i.e. routes without covariate coverage are dropped
+## entirely, not just the missing observations), so all four are directly
+## comparable to each other:
 ##
+##   base (no covariate)       models/slope_iCAR_route_NB_New.stan
+##     log(lambda[r,t]) = alpha[r] + beta[r]*t
 ##   grassland only            models/slope_iCAR_route_NB_New_covariate.stan
 ##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Grassland[r,t]
 ##   developed only             models/slope_iCAR_route_NB_New_covariate.stan
@@ -15,29 +19,39 @@
 ##   grassland & developed      models/slope_iCAR_route_NB_New_2covariates.stan
 ##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Grassland[r,t] + gamma2*Developed[r,t]
 ##
+## NOTE: "base" here is a SEPARATE fit from 1_species_iCAR_2010_2025.R's own
+## base fit. That script fits on the FULL dataset (all routes); this script's
+## "base" tag refits the same no-covariate model but restricted to the
+## covariate-reduced dataset, specifically so it's comparable to the other
+## three models on identical data. Both fits are kept (different output file
+## names), since they answer different questions.
+##
 ## Covariate data:
 ##   data/grasslands.csv, data/developed.csv — one row per BBS route per year,
 ##   with columns including CountryNum, StateNum, Route, year, and the
 ##   covariate value (grasslands / developed), range [0,1], NA for inactive
 ##   routes.
 ##
-## Route-key assumption: new_data$route (from bbsBayes2::prepare_data()) is
-## formatted "<StateNum>-<Route>" (matching the leading-digits-dash pattern
-## already relied on elsewhere in this repo, e.g.
-## 4_statistical_analysis_and_visualization.R's route_num extraction). The
-## join below checks its own match rate and errors out if that assumption
-## looks wrong for a given species — worth confirming on the first real run.
+## Route-key format: new_data$route (from bbsBayes2::prepare_data()) is
+## formatted "<StateNum>-<Route>" — but ONLY when stratified by "bcr"; the
+## "bbs_usgs" stratification renames routes differently and gave a ~38%
+## match rate against the covariate CSVs. Confirmed against
+## 1_baseline_NB_fit.R, a working reference script that joins these same
+## covariate CSVs successfully using strat = "bcr" plus a continental-US
+## filter (country_num == 840, state_num != 3). The join below still prints
+## sample values from both sides and checks its own match rate as a
+## safety net.
 ##
 ## Per user decision (2026-07-13 conversation):
 ##   - Counts with a missing (NA) grassland or developed value are dropped
 ##     from that species' stan_data (reduces ncounts) — applied once, up
-##     front, so all three models see identical data.
+##     front, so all four models (including "base") see identical data.
 ##   - The 2010 gap in the covariate CSVs (they start at 2011) is NOT
 ##     specially handled here — 2010 counts simply end up with NA covariates
 ##     and are dropped by the rule above. No back-filling or year-shifting.
 ##
 ## This script fits the models and saves, per species and per model tag
-## ("grassland", "developed", "grassland_developed"):
+## ("base", "grassland", "developed", "grassland_developed"):
 ##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_stanfit.rds
 ##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
@@ -73,7 +87,12 @@ firstYear  <- 2010
 lastYear   <- 2025
 dt         <- lastYear - firstYear
 
-strat <- "bbs_usgs"
+strat <- "bcr"   # NOT "bbs_usgs" — bbsBayes2 renames/reformats route IDs
+                 # differently per stratification scheme, and "bcr" is what
+                 # produces the "<StateNum>-<Route>" route IDs the covariate
+                 # CSVs are keyed by (confirmed by 1_baseline_NB_fit.R, a
+                 # working reference that joins these same covariate files
+                 # successfully using this stratification).
 
 # Re-fit control: if TRUE, ignore existing fits and re-run the model (needed
 # after changing the model, priors, or data thresholds).
@@ -135,18 +154,20 @@ species_to_f <- function(sp) {
   gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
 }
 
-# Compile the two covariate Stan models once (reused across species) ------
+# Compile the three Stan models once (reused across species) --------------
+model_base   <- cmdstan_model("models/slope_iCAR_route_NB_New.stan",
+                              stanc_options = list("O1"))
 model_single <- cmdstan_model("models/slope_iCAR_route_NB_New_covariate.stan",
                               stanc_options = list("O1"))
 model_double <- cmdstan_model("models/slope_iCAR_route_NB_New_2covariates.stan",
                               stanc_options = list("O1"))
 
-# Three model tags fit per species, on the same prepared dataset ----------
-model_tags <- c("grassland", "developed", "grassland_developed")
+# Four model tags fit per species, on the same prepared (reduced) dataset --
+model_tags <- c("base", "grassland", "developed", "grassland_developed")
 
 # ==========================================================================
 # Function: data-prep pipeline for one species (BBS data, covariate join,
-# NA-drop, spatial neighbours). Shared across all three model tags so they
+# NA-drop, spatial neighbours). Shared across all four model tags so they
 # fit on identical data. Returns a list with new_data, route_map,
 # realized_strata_map, car_stan_dat, sd_alpha_prior, base_stan_data (the
 # model-agnostic Stan data fields), and n_dropped.
@@ -168,7 +189,14 @@ prepare_species_data <- function(species, species_bbs, strat,
   raw_data <- data_pkg[["raw_data"]]
   strata_map <- load_map(strat)
 
-  # Use all available routes (no spatial route filtering) ------------------
+  # Continental US only (matches 1_baseline_NB_fit.R) — the land-cover
+  # covariate rasters/CSVs only cover the continental US, and state_num == 3
+  # is excluded there too.
+  raw_data <- raw_data %>%
+    filter(country_num == 840) %>%
+    filter(state_num != 3)
+
+  # Use all available routes (no further spatial route filtering) ----------
   new_data <- data.frame(
     strat_name = raw_data$strata_name,
     strat      = raw_data$strata,
@@ -195,11 +223,24 @@ prepare_species_data <- function(species, species_bbs, strat,
   match_rate <- mean(!is.na(new_data$grassland) & !is.na(new_data$developed))
   cat("    Covariate match rate (both grassland & developed present):",
       round(100 * match_rate, 1), "%\n")
+
+  # Diagnostic: always print a few sample route IDs from each side of the
+  # join, so a format mismatch is visible even when match_rate is nonzero
+  # (e.g. only some states/strata happen to line up under the current
+  # "<StateNum>-<Route>" assumption).
+  cat("    Sample new_data$route values:      ",
+      paste(head(unique(new_data$route), 6), collapse = ", "), "\n")
+  cat("    Sample covariate route_key values: ",
+      paste(head(unique(grass_lookup$route_key), 6), collapse = ", "), "\n")
+
   if (match_rate < 0.5) {
     stop("Less than half of observations matched a grassland/developed value ",
-         "for ", species, " — check the route-key format assumption ",
-         "('<StateNum>-<Route>') against new_data$route and the covariate ",
-         "CSVs before proceeding.")
+         "for ", species, " — new_data$route doesn't look like ",
+         "'<StateNum>-<Route>'. Compare the sample values printed above. ",
+         "This previously happened because strat was 'bbs_usgs' instead of ",
+         "'bcr' (bbsBayes2 renames routes differently per stratification); ",
+         "if strat is already 'bcr', check the continental-US filter and ",
+         "the key construction in load_covariate() instead.")
   }
 
   # Per user decision: drop counts with a missing covariate (rather than
@@ -290,8 +331,9 @@ prepare_species_data <- function(species, species_bbs, strat,
 }
 
 # ==========================================================================
-# Function: fit one of the three covariate models for one species, given the
-# shared prepared data from prepare_species_data(). Returns a one-row
+# Function: fit one of the four models (base, grassland, developed,
+# grassland_developed) for one species, given the shared prepared data from
+# prepare_species_data(). Returns a one-row
 # diagnostics data.frame (or NULL on failure, handled by the caller).
 # ==========================================================================
 fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
@@ -301,7 +343,10 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   base_stan_data <- prepped$base_stan_data
 
   # Covariate field(s) + Stan model for this tag ----------------------------
-  if (model_tag == "grassland") {
+  if (model_tag == "base") {
+    stan_model <- model_base
+    stan_data  <- base_stan_data
+  } else if (model_tag == "grassland") {
     stan_model <- model_single
     stan_data  <- c(base_stan_data, list(covariate = new_data$grassland))
   } else if (model_tag == "developed") {
@@ -345,8 +390,15 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   max_rhat <- max(summ$rhat, na.rm = TRUE)
   min_ess  <- min(summ$ess_bulk, na.rm = TRUE)
 
-  gamma1_mean <- summ$mean[summ$variable == "gamma1"]
-  gamma2_mean <- if (model_tag == "grassland_developed") {
+  # "base" has no gamma parameters at all; single-covariate models have only
+  # gamma1; the double-covariate model has both. Extract defensively so a
+  # missing variable (rather than an unexpected one) never errors here.
+  gamma1_mean <- if ("gamma1" %in% summ$variable) {
+    summ$mean[summ$variable == "gamma1"]
+  } else {
+    NA_real_
+  }
+  gamma2_mean <- if ("gamma2" %in% summ$variable) {
     summ$mean[summ$variable == "gamma2"]
   } else {
     NA_real_
@@ -354,7 +406,7 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
 
   cat("    Max Rhat:", round(max_rhat, 4),
       " | Min ESS:", round(min_ess, 0),
-      " | gamma1:", round(gamma1_mean, 4),
+      if (!is.na(gamma1_mean)) paste(" | gamma1:", round(gamma1_mean, 4)) else "",
       if (!is.na(gamma2_mean)) paste(" | gamma2:", round(gamma2_mean, 4)) else "",
       "\n")
 
@@ -372,7 +424,7 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
 }
 
 # ==========================================================================
-# Main loop: for each species, prepare data once, then fit all three models
+# Main loop: for each species, prepare data once, then fit all four models
 # ==========================================================================
 results_list <- list()
 diagnostics_list <- list()
@@ -387,7 +439,7 @@ for (i in seq_len(nrow(target_spp))) {
   cat("  [", i, "/", nrow(target_spp), "]", sp, "\n")
   cat("================================================================\n")
 
-  # Skip data prep entirely if all three model outputs already exist
+  # Skip data prep entirely if all four model outputs already exist
   all_exist <- all(vapply(model_tags, function(tag) {
     out_base  <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
     summ_file <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
@@ -395,11 +447,11 @@ for (i in seq_len(nrow(target_spp))) {
   }, logical(1)))
 
   if (all_exist && !force_refit) {
-    cat("  Skipping (all 3 models already fitted for", sp, ")\n")
+    cat("  Skipping (all", length(model_tags), "models already fitted for", sp, ")\n")
     next
   }
 
-  # Prepare data once (shared across the three model fits) ------------------
+  # Prepare data once (shared across all four model fits) -------------------
   prepped <- tryCatch(
     prepare_species_data(species = sp, species_bbs = sp_bbs, strat = strat,
                          firstYear = firstYear, lastYear = lastYear,
@@ -411,7 +463,7 @@ for (i in seq_len(nrow(target_spp))) {
   )
   if (is.null(prepped)) next
 
-  # Fit each of the three models --------------------------------------------
+  # Fit each of the four models ----------------------------------------------
   for (tag in model_tags) {
     out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
     summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))

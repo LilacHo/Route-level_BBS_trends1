@@ -3,16 +3,18 @@
 ## for cross-model comparison.
 ## Time period: 2010-2025
 ##
-## Combines four "model" sources per species:
-##   base                 — no covariates, from 1_species_iCAR_2010_2025.R,
-##                          read from the CSV already written by
-##                          2_generate_route_trend_csvs.R
-##                          (output/species_routes/<species>_route_trends.csv)
-##   grassland            — from 1c_species_iCAR_covariates.R
-##   developed            — from 1c_species_iCAR_covariates.R
-##   grassland_developed  — from 1c_species_iCAR_covariates.R
+## Combines FOUR "model" sources per species, all fit by
+## 1c_species_iCAR_covariates.R on the SAME covariate-reduced dataset (so
+## they're directly comparable to each other): "base" (no covariates),
+## "grassland", "developed", "grassland_developed".
 ##
-## For the three covariate models, reads the summary fit + stan_data saved by
+## NOTE: "base" here is 1c's own no-covariate refit on the reduced dataset —
+## NOT the full-dataset base fit from 1_species_iCAR_2010_2025.R /
+## 2_generate_route_trend_csvs.R. That full-dataset fit uses more routes and
+## is intentionally not comparable to the covariate models, so it is not
+## included in this combined file.
+##
+## For all four models, reads the summary fit + stan_data saved by
 ## 1c_species_iCAR_covariates.R:
 ##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
@@ -47,14 +49,13 @@ library(here)
 
 here::i_am("2c_generate_route_trend_csvs_covariates.R")
 
-# Settings (match 1_species_iCAR_2010_2025.R / 1c_species_iCAR_covariates.R) -
+# Settings (match 1c_species_iCAR_covariates.R) ----------------------------
 land_cover <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2025
-covariate_model_tags <- c("grassland", "developed", "grassland_developed")
+model_tags <- c("base", "grassland", "developed", "grassland_developed")
 
-output_dir      <- here::here("output")
-base_route_dir  <- here::here("output", "species_routes")             # from step 2
+output_dir       <- here::here("output")
 combined_out_dir <- here::here("output", "species_routes_covariates")
 if (!dir.exists(combined_out_dir)) dir.create(combined_out_dir, recursive = TRUE)
 
@@ -78,7 +79,7 @@ if (exists("species_filter")) {
 cat("=== Combine route-trend CSVs across all models ===\n")
 cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
 cat("Species in group (n =", nrow(target_spp), ")\n")
-cat("Models: base,", paste(covariate_model_tags, collapse = ", "), "\n")
+cat("Models:", paste(model_tags, collapse = ", "), "\n")
 
 # Helper: convert species name to file-safe format ------------------------
 species_to_f <- function(sp) {
@@ -102,30 +103,9 @@ for (i in seq_len(nrow(target_spp))) {
 
   cat("\n[", i, "/", nrow(target_spp), "]", sp, "\n")
 
-  # --- base model: read the CSV already written by 2_generate_route_trend_csvs.R
-  base_csv <- file.path(base_route_dir, paste0(sp_f, "_route_trends.csv"))
-  if (file.exists(base_csv)) {
-    base_trends <- read.csv(base_csv, stringsAsFactors = FALSE) %>%
-      mutate(model = "base") %>%
-      select(all_of(route_cols))
-    all_route_rows[[paste(sp, "base", sep = " | ")]] <- base_trends
-
-    all_model_rows[[paste(sp, "base", sep = " | ")]] <- data.frame(
-      species      = sp,
-      species_code = sp_code,
-      model        = "base",
-      n_routes     = nrow(base_trends),
-      gamma1       = NA_real_,
-      gamma2       = NA_real_
-    )
-    cat("  [base] ", nrow(base_trends), "routes\n")
-  } else {
-    cat("  [base] No CSV found (", basename(base_csv),
-        ") — run 2_generate_route_trend_csvs.R first. Skipping base for this species.\n")
-  }
-
-  # --- covariate models: read summ_fit + stan_data written by 1c
-  for (tag in covariate_model_tags) {
+  # All four models are fit by 1c_species_iCAR_covariates.R on the identical
+  # reduced dataset, so all four are read the same way here.
+  for (tag in model_tags) {
 
     out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
     summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
@@ -156,9 +136,14 @@ for (i in seq_len(nrow(target_spp))) {
                 alpha         = mean,
                 rel_abundance = exp(mean))
 
-    # Species+model-level covariate effect(s), not per-route -----------------
-    gamma1_val <- summ$mean[summ$variable == "gamma1"]
-    gamma2_val <- if (tag == "grassland_developed") {
+    # Species+model-level covariate effect(s), not per-route. "base" has
+    # neither gamma1 nor gamma2; single-covariate models have only gamma1.
+    gamma1_val <- if ("gamma1" %in% summ$variable) {
+      summ$mean[summ$variable == "gamma1"]
+    } else {
+      NA_real_
+    }
+    gamma2_val <- if ("gamma2" %in% summ$variable) {
       summ$mean[summ$variable == "gamma2"]
     } else {
       NA_real_
@@ -193,8 +178,7 @@ for (i in seq_len(nrow(target_spp))) {
 }
 
 if (length(all_route_rows) == 0) {
-  stop("Nothing to combine — run 2_generate_route_trend_csvs.R and/or ",
-       "1c_species_iCAR_covariates.R first.")
+  stop("Nothing to combine — run 1c_species_iCAR_covariates.R first.")
 }
 
 all_route_trends <- bind_rows(all_route_rows)
