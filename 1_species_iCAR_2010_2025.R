@@ -8,9 +8,12 @@
 ##   - Main loop: fit per species, save the fit + stan_data, collect diagnostics
 ##
 ## This script FITS the models and saves, per species:
-##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds
-##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds
+##   output/rds/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds
+##   output/rds/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
+##
+## All .rds fit output goes in output/rds/ (not directly in output/, which
+## holds CSVs and other non-rds outputs).
 ##
 ## Per-route trend CSVs are generated separately by
 ## 2_generate_route_trend_csvs.R (reads the saved fits above). Trend maps by
@@ -65,6 +68,8 @@ force_refit <- FALSE
 # Output directories
 output_dir <- here::here("output")
 if (!dir.exists(output_dir)) dir.create(output_dir)
+rds_dir <- here::here("output", "rds")   # all .rds fit output goes here, not directly in output/
+if (!dir.exists(rds_dir)) dir.create(rds_dir, recursive = TRUE)
 if (!dir.exists(here::here("data"))) dir.create(here::here("data"))
 if (!dir.exists(here::here("data", "maps"))) dir.create(here::here("data", "maps"), recursive = TRUE)
 if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", "stan_data"), recursive = TRUE)
@@ -233,8 +238,8 @@ fit_species <- function(species, species_bbs, species_f, strat,
   cat("    Fit time:", fit_time, "minutes\n")
 
   out_base <- paste0(species_f, "_iCAR_NB_", firstYear, "_", lastYear)
-  stanfit$save_object(file.path(output_dir, paste0(out_base, "_stanfit.rds")))
-  saveRDS(summ, file.path(output_dir, paste0(out_base, "_summ_fit.rds")))
+  stanfit$save_object(file.path(rds_dir, paste0(out_base, "_stanfit.rds")))
+  saveRDS(summ, file.path(rds_dir, paste0(out_base, "_summ_fit.rds")))
 
   # Convergence diagnostics ------------------------------------------------
   max_rhat <- max(summ$rhat, na.rm = TRUE)
@@ -312,7 +317,7 @@ fit_species <- function(species, species_bbs, species_f, strat,
   #   cat("    CV lppd:", round(cv_lppd, 4),
   #       " | Spearman r:", round(cv_cor, 3), "\n")
   #
-  #   saveRDS(cv_results, file.path(output_dir,
+  #   saveRDS(cv_results, file.path(rds_dir,
   #                                 paste0(species_f, "_iCAR_cv_results_", ynext, ".rds")))
   # } else {
   #   cat("    No prediction data for year", ynext, "— CV skipped.\n")
@@ -351,7 +356,7 @@ for (i in seq_len(nrow(target_spp))) {
 
   # Skip if this species' fit already exists
   out_base       <- paste0(sp_f, "_iCAR_NB_", firstYear, "_", lastYear)
-  summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+  summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
   stan_data_file <- here::here("data", "stan_data",
                                paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))
   if (file.exists(summ_file) && file.exists(stan_data_file) && !force_refit) {

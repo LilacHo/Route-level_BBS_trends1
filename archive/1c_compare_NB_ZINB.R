@@ -38,12 +38,15 @@
 ## models/slope_iCAR_route_NB_cv.stan) already exist and are unchanged.
 ##
 ## Output:
-##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds   (NB)
-##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds
-##   output/<species>_iCAR_ZINB_<firstYear>_<lastYear>_stanfit.rds  (ZINB)
-##   output/<species>_iCAR_ZINB_<firstYear>_<lastYear>_summ_fit.rds
+##   output/rds/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds   (NB)
+##   output/rds/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds
+##   output/rds/<species>_iCAR_ZINB_<firstYear>_<lastYear>_stanfit.rds  (ZINB)
+##   output/rds/<species>_iCAR_ZINB_<firstYear>_<lastYear>_summ_fit.rds
 ##   output/model_comparison/<group>_<species>_NB_vs_ZINB.csv  (per species)
 ##   output/model_comparison_<group>_<firstYear>_<lastYear>.csv (combined)
+##
+## All .rds fit output goes in output/rds/ (not directly in output/, which
+## holds CSVs and other non-rds outputs).
 ##
 ## NB reuses the main pipeline's naming (1_species_iCAR_2010_2025.R, tagged
 ## "_iCAR_NB_"): if that script has already fit a species, this script pulls
@@ -103,6 +106,8 @@ species_subset <- NULL
 
 output_dir <- here::here("output")
 if (!dir.exists(output_dir)) dir.create(output_dir)
+rds_dir <- here::here("output", "rds")   # all .rds fit output lives here
+if (!dir.exists(rds_dir)) dir.create(rds_dir, recursive = TRUE)
 if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", "stan_data"), recursive = TRUE)
 cmp_dir <- here::here("output", "model_comparison")
 if (!dir.exists(cmp_dir)) dir.create(cmp_dir, recursive = TRUE)
@@ -295,9 +300,9 @@ fit_one_model <- function(model_type, prep, cv_pieces, species_f) {
   # own "_ZINB_" tag.
   name_tag        <- if (model_type == "NB") "NB" else model_type
   out_base        <- paste0(species_f, "_iCAR_", name_tag, "_", firstYear, "_", lastYear)
-  stanfit_file    <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
-  summ_file       <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
-  cv_results_file <- file.path(output_dir, paste0(species_f, "_iCAR_cv_results_", lastYear, ".rds"))
+  stanfit_file    <- file.path(rds_dir, paste0(out_base, "_stanfit.rds"))
+  summ_file       <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
+  cv_results_file <- file.path(rds_dir, paste0(species_f, "_iCAR_cv_results_", lastYear, ".rds"))
 
   # Full fit (for convergence diagnostics) ---------------------------------
   if (model_type == "NB" && file.exists(summ_file)) {

@@ -4,7 +4,7 @@
 ##
 ## Reads the per-species posterior draws + stan data saved by
 ## 1_species_iCAR_2010_2025.R:
-##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds
+##   output/rds/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds
 ##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
 ##
 ## The fitted Stan model (models/slope_iCAR_route_NB_New.stan) has no
@@ -56,8 +56,8 @@ set.seed(123)
 overwrite <- TRUE
 
 # Directories
-output_dir <- here::here("output")
-ppc_dir    <- here::here("output", "ppc")
+rds_dir <- here::here("output", "rds")   # all .rds fit output lives here
+ppc_dir <- here::here("output", "ppc")
 if (!dir.exists(ppc_dir)) dir.create(ppc_dir, recursive = TRUE)
 
 # Target group species list -------------------------------------------------
@@ -150,7 +150,7 @@ for (i in seq_len(nrow(target_spp))) {
   cat("\n[", i, "/", nrow(target_spp), "]", sp, "\n")
 
   out_base       <- paste0(sp_f, "_iCAR_NB_", firstYear, "_", lastYear)
-  stanfit_file   <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
+  stanfit_file   <- file.path(rds_dir, paste0(out_base, "_stanfit.rds"))
   stan_data_file <- here::here("data", "stan_data",
                                paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))
 
