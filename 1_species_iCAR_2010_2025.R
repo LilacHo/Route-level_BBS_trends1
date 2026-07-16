@@ -8,16 +8,18 @@
 ##   - Main loop: fit per species, save the fit + stan_data, collect diagnostics
 ##
 ## This script FITS the models and saves, per species:
-##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds
-##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds
+##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds
+##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
 ##
 ## Per-route trend CSVs are generated separately by
 ## 2_generate_route_trend_csvs.R (reads the saved fits above). Trend maps by
 ## 3_plot_iCAR_trend_maps.R (reads those CSVs).
 ##
-## Diagnostics (Rhat, ESS, leave-future-out CV) are kept: printed to console,
-## stored per species, and written to a combined diagnostics CSV at the end.
+## Diagnostics (Rhat, ESS) are kept: printed to console, stored per species,
+## and written to a combined diagnostics CSV at the end. Leave-future-out CV
+## is currently commented out (see fit_species()) — cv_lppd/cv_cor columns
+## will be NA until it's re-enabled.
 ##
 ## Adapted from AdamCSmithCWS/Route-level_BBS_trends
 ## Based on 1alt_Species_data_prep_bbsBayes2.R, Fitting_new_iCAR_slope_model.R
@@ -230,7 +232,7 @@ fit_species <- function(species, species_bbs, species_f, strat,
   fit_time <- round(stanfit$time()[["total"]] / 60, 1)
   cat("    Fit time:", fit_time, "minutes\n")
 
-  out_base <- paste0(species_f, "_iCAR_New_", firstYear, "_", lastYear)
+  out_base <- paste0(species_f, "_iCAR_NB_", firstYear, "_", lastYear)
   stanfit$save_object(file.path(output_dir, paste0(out_base, "_stanfit.rds")))
   saveRDS(summ, file.path(output_dir, paste0(out_base, "_summ_fit.rds")))
 
@@ -240,81 +242,82 @@ fit_species <- function(species, species_bbs, species_f, strat,
   cat("    Max Rhat:", round(max_rhat, 4),
       " | Min ESS:", round(min_ess, 0), "\n")
 
-  # Leave-future-out CV (final year only) ----------------------------------
-  ynext <- lastYear
-  full_data <- new_data
-
-  obs_df_fit <- full_data %>%
-    filter(r_year <= ynext - 1) %>%
-    mutate(observer = as.integer(factor(ObsN)))
-
-  stan_data_cv <- list(
-    count      = obs_df_fit$count,
-    year       = obs_df_fit$year,
-    route      = obs_df_fit$routeF,
-    firstyr    = obs_df_fit$firstyr,
-    observer   = obs_df_fit$observer,
-    nobservers = max(obs_df_fit$observer),
-    nyears     = max(obs_df_fit$year),
-    nroutes    = nrow(route_map),
-    ncounts    = length(obs_df_fit$count),
-    fixedyear  = floor(max(obs_df_fit$year) / 2),
-    N_edges    = car_stan_dat$N_edges,
-    node1      = car_stan_dat$node1,
-    node2      = car_stan_dat$node2,
-    sd_alpha_prior = sd_alpha_prior
-  )
-
-  obs_df <- obs_df_fit %>% select(observer, ObsN) %>% distinct()
-
-  obs_df_predict <- full_data %>%
-    filter(r_year == ynext) %>%
-    left_join(., obs_df, by = "ObsN") %>%
-    mutate(observer = ifelse(!is.na(observer), observer, 0))
-
-  stan_data_cv[["route_pred"]]    <- obs_df_predict$routeF
-  stan_data_cv[["count_pred"]]    <- obs_df_predict$count
-  stan_data_cv[["firstyr_pred"]]  <- obs_df_predict$firstyr
-  stan_data_cv[["observer_pred"]] <- obs_df_predict$observer
-  stan_data_cv[["ncounts_pred"]]  <- length(obs_df_predict$count)
+  # Leave-future-out CV (final year only) -- commented out for now ---------
+  # ynext <- lastYear
+  # full_data <- new_data
+  #
+  # obs_df_fit <- full_data %>%
+  #   filter(r_year <= ynext - 1) %>%
+  #   mutate(observer = as.integer(factor(ObsN)))
+  #
+  # stan_data_cv <- list(
+  #   count      = obs_df_fit$count,
+  #   year       = obs_df_fit$year,
+  #   route      = obs_df_fit$routeF,
+  #   firstyr    = obs_df_fit$firstyr,
+  #   observer   = obs_df_fit$observer,
+  #   nobservers = max(obs_df_fit$observer),
+  #   nyears     = max(obs_df_fit$year),
+  #   nroutes    = nrow(route_map),
+  #   ncounts    = length(obs_df_fit$count),
+  #   fixedyear  = floor(max(obs_df_fit$year) / 2),
+  #   N_edges    = car_stan_dat$N_edges,
+  #   node1      = car_stan_dat$node1,
+  #   node2      = car_stan_dat$node2,
+  #   sd_alpha_prior = sd_alpha_prior
+  # )
+  #
+  # obs_df <- obs_df_fit %>% select(observer, ObsN) %>% distinct()
+  #
+  # obs_df_predict <- full_data %>%
+  #   filter(r_year == ynext) %>%
+  #   left_join(., obs_df, by = "ObsN") %>%
+  #   mutate(observer = ifelse(!is.na(observer), observer, 0))
+  #
+  # stan_data_cv[["route_pred"]]    <- obs_df_predict$routeF
+  # stan_data_cv[["count_pred"]]    <- obs_df_predict$count
+  # stan_data_cv[["firstyr_pred"]]  <- obs_df_predict$firstyr
+  # stan_data_cv[["observer_pred"]] <- obs_df_predict$observer
+  # stan_data_cv[["ncounts_pred"]]  <- length(obs_df_predict$count)
 
   cv_lppd <- NA
   cv_cor  <- NA
 
-  if (stan_data_cv[["ncounts_pred"]] > 0) {
-    cv_fit <- cv_model$sample(
-      data = stan_data_cv,
-      refresh = 400,
-      chains = 3, iter_sampling = 1000, iter_warmup = 1000,
-      parallel_chains = 3,
-      adapt_delta = 0.8,
-      max_treedepth = 10,
-      show_exceptions = FALSE,
-      output_dir = cmdstanr_output_dir
-    )
-
-    log_lik_full <- posterior_samples(fit = cv_fit, parm = "log_lik", dims = "i")
-    log_lik_summ <- posterior_sums(log_lik_full, quantiles = NULL, dims = "i")
-    names(log_lik_summ) <- paste0("log_lik_", names(log_lik_summ))
-
-    E_pred_full <- posterior_samples(fit = cv_fit, parm = "E_pred", dims = "i")
-    E_pred_summ <- posterior_sums(E_pred_full, quantiles = NULL, dims = "i")
-    names(E_pred_summ) <- paste0("E_pred_", names(E_pred_summ))
-
-    cv_results <- bind_cols(obs_df_predict, log_lik_summ, E_pred_summ)
-    cv_results$E_pred_count <- exp(cv_results$E_pred_mean)
-
-    cv_lppd <- mean(cv_results$log_lik_mean)
-    cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
-
-    cat("    CV lppd:", round(cv_lppd, 4),
-        " | Spearman r:", round(cv_cor, 3), "\n")
-
-    saveRDS(cv_results, file.path(output_dir,
-                                  paste0(species_f, "_iCAR_cv_results_", ynext, ".rds")))
-  } else {
-    cat("    No prediction data for year", ynext, "— CV skipped.\n")
-  }
+  # if (stan_data_cv[["ncounts_pred"]] > 0) {
+  #   cv_fit <- cv_model$sample(
+  #     data = stan_data_cv,
+  #     refresh = 400,
+  #     chains = 3, iter_sampling = 1000, iter_warmup = 1000,
+  #     parallel_chains = 3,
+  #     adapt_delta = 0.8,
+  #     max_treedepth = 10,
+  #     show_exceptions = FALSE,
+  #     output_dir = cmdstanr_output_dir
+  #   )
+  #
+  #   log_lik_full <- posterior_samples(fit = cv_fit, parm = "log_lik", dims = "i")
+  #   log_lik_summ <- posterior_sums(log_lik_full, quantiles = NULL, dims = "i")
+  #   names(log_lik_summ) <- paste0("log_lik_", names(log_lik_summ))
+  #
+  #   E_pred_full <- posterior_samples(fit = cv_fit, parm = "E_pred", dims = "i")
+  #   E_pred_summ <- posterior_sums(E_pred_full, quantiles = NULL, dims = "i")
+  #   names(E_pred_summ) <- paste0("E_pred_", names(E_pred_summ))
+  #
+  #   cv_results <- bind_cols(obs_df_predict, log_lik_summ, E_pred_summ)
+  #   cv_results$E_pred_count <- exp(cv_results$E_pred_mean)
+  #
+  #   cv_lppd <- mean(cv_results$log_lik_mean)
+  #   cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
+  #
+  #   cat("    CV lppd:", round(cv_lppd, 4),
+  #       " | Spearman r:", round(cv_cor, 3), "\n")
+  #
+  #   saveRDS(cv_results, file.path(output_dir,
+  #                                 paste0(species_f, "_iCAR_cv_results_", ynext, ".rds")))
+  # } else {
+  #   cat("    No prediction data for year", ynext, "— CV skipped.\n")
+  # }
+  cat("    CV skipped (disabled).\n")
 
   diagnostics <- data.frame(
     species   = species,
@@ -347,7 +350,7 @@ for (i in seq_len(nrow(target_spp))) {
   cat("================================================================\n")
 
   # Skip if this species' fit already exists
-  out_base       <- paste0(sp_f, "_iCAR_New_", firstYear, "_", lastYear)
+  out_base       <- paste0(sp_f, "_iCAR_NB_", firstYear, "_", lastYear)
   summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
   stan_data_file <- here::here("data", "stan_data",
                                paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))

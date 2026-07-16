@@ -2,6 +2,13 @@
 ## Compare NB vs ZINB iCAR route-level trend models
 ## Time period: 2010-2025
 ##
+## ARCHIVED (2026-07-16): comparison concluded NB is retained for all
+## species — the ZINB improvement was negligible or negative for the large
+## majority of species (see the judgement statement in project notes).
+## Kept here for reference / re-running if the question is revisited.
+## Originally 3_compare_NB_ZINB.R; renamed to sit alongside 1_ and 1b_ as
+## part of the model-fitting/diagnostics family and moved to archive/.
+##
 ## Motivation: 1b_posterior_predictive_checks.R found that ~27 of 39
 ## grassland species show a strong, consistent posterior-predictive-check
 ## signature of excess zeros under the plain NB model fit by
@@ -18,10 +25,11 @@
 ## For each species, this script:
 ##   1. Prepares the BBS data once (shared by both models).
 ##   2. Fits the full model with NB and with ZINB.
-##   3. Runs leave-future-out CV (predict final year) for each model.
-##   4. Computes comparison metrics: CV lppd, Spearman r, convergence (max
-##      Rhat / min ESS), proportion of zeros in the data, and the estimated
-##      zero-inflation probability (theta) for ZINB.
+##   3. Leave-future-out CV (predict final year) is currently commented out
+##      for both models — cv_lppd/cv_cor will be NA until re-enabled.
+##   4. Computes comparison metrics: convergence (max Rhat / min ESS),
+##      proportion of zeros in the data, and the estimated zero-inflation
+##      probability (theta) for ZINB.
 ##
 ## Requires (new files, does not touch any existing model or script):
 ##   models/slope_iCAR_route_ZINB_New.stan
@@ -30,30 +38,29 @@
 ## models/slope_iCAR_route_NB_cv.stan) already exist and are unchanged.
 ##
 ## Output:
-##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds   (NB)
-##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds
+##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds   (NB)
+##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds
 ##   output/<species>_iCAR_ZINB_<firstYear>_<lastYear>_stanfit.rds  (ZINB)
 ##   output/<species>_iCAR_ZINB_<firstYear>_<lastYear>_summ_fit.rds
 ##   output/model_comparison/<group>_<species>_NB_vs_ZINB.csv  (per species)
 ##   output/model_comparison_<group>_<firstYear>_<lastYear>.csv (combined)
 ##
-## NB deliberately reuses the main pipeline's original "New" naming
-## (1_species_iCAR_2010_2025.R): if that script has already fit a species,
-## this script pulls the existing _stanfit/_summ_fit/_cv_results output from
-## disk instead of refitting NB from scratch, and only fits ZINB (tagged
-## "_ZINB_", which has no prior output to reuse). If no prior NB fit is
-## found, it's fit here and saved under the same "New" name, so a later run
-## of 1_species_iCAR_2010_2025.R would pick it up too. (NB's tag could be
-## switched to a distinct "_NB_" name later; for now it must stay "New" to
-## match what's already on disk.)
+## NB reuses the main pipeline's naming (1_species_iCAR_2010_2025.R, tagged
+## "_iCAR_NB_"): if that script has already fit a species, this script pulls
+## the existing _stanfit/_summ_fit output from disk instead of refitting NB
+## from scratch, and only fits ZINB (tagged "_ZINB_", which has no prior
+## output to reuse). If no prior NB fit is found, it's fit here and saved
+## under the same "NB" name, so a later run of 1_species_iCAR_2010_2025.R
+## would pick it up too.
 ##
-## Interpretation: prefer the model with the higher (less negative) CV lppd.
-## A large theta and an NB with many excess zeros points to ZINB; if theta is
-## near 0 and lppd is similar, NB is the more parsimonious choice. Note: PPC
-## flagged Swainson's Hawk for a *different* reason (under-, not
-## over-dispersion at the low end — p_sd/p_max near 0, not p_prop_zero near
-## 0), so ZINB is not expected to help there; its result should be read with
-## that caveat rather than as a failure of the comparison.
+## Interpretation (from the 2026-07-16 run, with CV enabled): prefer the
+## model with the higher (less negative) CV lppd. A large theta and an NB
+## with many excess zeros points to ZINB; if theta is near 0 and lppd is
+## similar, NB is the more parsimonious choice. Note: PPC flagged Swainson's
+## Hawk for a *different* reason (under-, not over-dispersion at the low
+## end — p_sd/p_max near 0, not p_prop_zero near 0), so ZINB was not
+## expected to help there. With CV commented out below, re-enable that
+## block to reproduce cv_lppd/cv_cor for a fresh comparison.
 ## =============================================================================
 
 library(bbsBayes2)
@@ -65,7 +72,7 @@ library(spdep)
 library(concaveman)
 library(here)
 
-here::i_am("3_compare_NB_ZINB.R")
+here::i_am("archive/1c_compare_NB_ZINB.R")
 source("functions/neighbours_define_voronoi.R")
 source("functions/posterior_summary_functions.R")
 
@@ -280,14 +287,13 @@ build_cv_data <- function(prep) {
 fit_one_model <- function(model_type, prep, cv_pieces, species_f) {
   mods <- models[[model_type]]
 
-  # File naming: NB reuses the main pipeline's original "New" naming
-  # (1_species_iCAR_2010_2025.R) so an already-fitted NB model can be pulled
-  # from disk instead of refit here — NB fits are the expensive part and
-  # 1_species_iCAR_2010_2025.R has usually already done them for every
-  # species. ZINB has no prior fit to reuse, so it gets its own "_ZINB_"
-  # tag. (NB's tag could switch to "_NB_" later; for now it must stay "New"
-  # to match what's already on disk and avoid re-running NB fits.)
-  name_tag        <- if (model_type == "NB") "New" else model_type
+  # File naming: NB reuses the main pipeline's naming
+  # (1_species_iCAR_2010_2025.R, tagged "_iCAR_NB_") so an already-fitted NB
+  # model can be pulled from disk instead of refit here — NB fits are the
+  # expensive part and 1_species_iCAR_2010_2025.R has usually already done
+  # them for every species. ZINB has no prior fit to reuse, so it gets its
+  # own "_ZINB_" tag.
+  name_tag        <- if (model_type == "NB") "NB" else model_type
   out_base        <- paste0(species_f, "_iCAR_", name_tag, "_", firstYear, "_", lastYear)
   stanfit_file    <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
   summ_file       <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
@@ -310,7 +316,7 @@ fit_one_model <- function(model_type, prep, cv_pieces, species_f) {
     )
     summ <- stanfit$summary()
 
-    # Save fit + summary, tagged with model_type (New / ZINB) so this never
+    # Save fit + summary, tagged with model_type (NB / ZINB) so this never
     # overwrites a different model's output.
     stanfit$save_object(stanfit_file)
     saveRDS(summ, summ_file)
@@ -326,47 +332,48 @@ fit_one_model <- function(model_type, prep, cv_pieces, species_f) {
     theta <- summ$mean[summ$variable == "theta"]
   }
 
-  # CV fit -----------------------------------------------------------------
-  stan_data_cv   <- cv_pieces$stan_data_cv
-  obs_df_predict <- cv_pieces$obs_df_predict
+  # CV fit -- commented out for now -----------------------------------------
+  # stan_data_cv   <- cv_pieces$stan_data_cv
+  # obs_df_predict <- cv_pieces$obs_df_predict
   cv_lppd <- NA
   cv_cor  <- NA
 
-  if (model_type == "NB" && file.exists(cv_results_file)) {
-    cat("    [", model_type, "] Reusing existing CV results:", basename(cv_results_file), "\n")
-    cv_results <- readRDS(cv_results_file)
-    cv_lppd <- mean(cv_results$log_lik_mean)
-    cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
-    cat("    [", model_type, "] CV lppd:", round(cv_lppd, 4),
-        " | Spearman r:", round(cv_cor, 3), "\n")
-  } else if (stan_data_cv[["ncounts_pred"]] > 0) {
-    cv_fit <- mods$cv$sample(
-      data = stan_data_cv,
-      refresh = 0,
-      chains = 3, iter_sampling = 1000, iter_warmup = 1000,
-      parallel_chains = 3,
-      adapt_delta = 0.8,
-      max_treedepth = 10,
-      show_exceptions = FALSE,
-      output_dir = cmdstanr_output_dir
-    )
-
-    log_lik_full <- posterior_samples(fit = cv_fit, parm = "log_lik", dims = "i")
-    log_lik_summ <- posterior_sums(log_lik_full, quantiles = NULL, dims = "i")
-    names(log_lik_summ) <- paste0("log_lik_", names(log_lik_summ))
-
-    E_pred_full <- posterior_samples(fit = cv_fit, parm = "E_pred", dims = "i")
-    E_pred_summ <- posterior_sums(E_pred_full, quantiles = NULL, dims = "i")
-    names(E_pred_summ) <- paste0("E_pred_", names(E_pred_summ))
-
-    cv_results <- bind_cols(obs_df_predict, log_lik_summ, E_pred_summ)
-    cv_results$E_pred_count <- exp(cv_results$E_pred_mean)
-
-    cv_lppd <- mean(cv_results$log_lik_mean)
-    cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
-    cat("    [", model_type, "] CV lppd:", round(cv_lppd, 4),
-        " | Spearman r:", round(cv_cor, 3), "\n")
-  }
+  # if (model_type == "NB" && file.exists(cv_results_file)) {
+  #   cat("    [", model_type, "] Reusing existing CV results:", basename(cv_results_file), "\n")
+  #   cv_results <- readRDS(cv_results_file)
+  #   cv_lppd <- mean(cv_results$log_lik_mean)
+  #   cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
+  #   cat("    [", model_type, "] CV lppd:", round(cv_lppd, 4),
+  #       " | Spearman r:", round(cv_cor, 3), "\n")
+  # } else if (stan_data_cv[["ncounts_pred"]] > 0) {
+  #   cv_fit <- mods$cv$sample(
+  #     data = stan_data_cv,
+  #     refresh = 0,
+  #     chains = 3, iter_sampling = 1000, iter_warmup = 1000,
+  #     parallel_chains = 3,
+  #     adapt_delta = 0.8,
+  #     max_treedepth = 10,
+  #     show_exceptions = FALSE,
+  #     output_dir = cmdstanr_output_dir
+  #   )
+  #
+  #   log_lik_full <- posterior_samples(fit = cv_fit, parm = "log_lik", dims = "i")
+  #   log_lik_summ <- posterior_sums(log_lik_full, quantiles = NULL, dims = "i")
+  #   names(log_lik_summ) <- paste0("log_lik_", names(log_lik_summ))
+  #
+  #   E_pred_full <- posterior_samples(fit = cv_fit, parm = "E_pred", dims = "i")
+  #   E_pred_summ <- posterior_sums(E_pred_full, quantiles = NULL, dims = "i")
+  #   names(E_pred_summ) <- paste0("E_pred_", names(E_pred_summ))
+  #
+  #   cv_results <- bind_cols(obs_df_predict, log_lik_summ, E_pred_summ)
+  #   cv_results$E_pred_count <- exp(cv_results$E_pred_mean)
+  #
+  #   cv_lppd <- mean(cv_results$log_lik_mean)
+  #   cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
+  #   cat("    [", model_type, "] CV lppd:", round(cv_lppd, 4),
+  #       " | Spearman r:", round(cv_cor, 3), "\n")
+  # }
+  cat("    [", model_type, "] CV skipped (disabled).\n")
 
   data.frame(
     model     = model_type,

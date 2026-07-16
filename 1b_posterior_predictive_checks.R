@@ -4,7 +4,7 @@
 ##
 ## Reads the per-species posterior draws + stan data saved by
 ## 1_species_iCAR_2010_2025.R:
-##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds
+##   output/<species>_iCAR_NB_<firstYear>_<lastYear>_stanfit.rds
 ##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
 ##
 ## The fitted Stan model (models/slope_iCAR_route_NB_New.stan) has no
@@ -149,7 +149,7 @@ for (i in seq_len(nrow(target_spp))) {
 
   cat("\n[", i, "/", nrow(target_spp), "]", sp, "\n")
 
-  out_base       <- paste0(sp_f, "_iCAR_New_", firstYear, "_", lastYear)
+  out_base       <- paste0(sp_f, "_iCAR_NB_", firstYear, "_", lastYear)
   stanfit_file   <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
   stan_data_file <- here::here("data", "stan_data",
                                paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))
@@ -161,7 +161,7 @@ for (i in seq_len(nrow(target_spp))) {
   }
 
   if (!file.exists(stanfit_file) || !file.exists(stan_data_file)) {
-    cat("  No fitted output found — run 1_species_iCAR_2010_2024.R first. Skipping.\n")
+    cat("  No fitted output found — run 1_species_iCAR_2010_2025.R first. Skipping.\n")
     next
   }
 
