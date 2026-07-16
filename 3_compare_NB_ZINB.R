@@ -30,8 +30,22 @@
 ## models/slope_iCAR_route_NB_cv.stan) already exist and are unchanged.
 ##
 ## Output:
+##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds   (NB)
+##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds
+##   output/<species>_iCAR_ZINB_<firstYear>_<lastYear>_stanfit.rds  (ZINB)
+##   output/<species>_iCAR_ZINB_<firstYear>_<lastYear>_summ_fit.rds
 ##   output/model_comparison/<group>_<species>_NB_vs_ZINB.csv  (per species)
 ##   output/model_comparison_<group>_<firstYear>_<lastYear>.csv (combined)
+##
+## NB deliberately reuses the main pipeline's original "New" naming
+## (1_species_iCAR_2010_2025.R): if that script has already fit a species,
+## this script pulls the existing _stanfit/_summ_fit/_cv_results output from
+## disk instead of refitting NB from scratch, and only fits ZINB (tagged
+## "_ZINB_", which has no prior output to reuse). If no prior NB fit is
+## found, it's fit here and saved under the same "New" name, so a later run
+## of 1_species_iCAR_2010_2025.R would pick it up too. (NB's tag could be
+## switched to a distinct "_NB_" name later; for now it must stay "New" to
+## match what's already on disk.)
 ##
 ## Interpretation: prefer the model with the higher (less negative) CV lppd.
 ## A large theta and an NB with many excess zeros points to ZINB; if theta is
@@ -263,21 +277,45 @@ build_cv_data <- function(prep) {
 # ==========================================================================
 # Fit one model type (full + CV) and return its metrics.
 # ==========================================================================
-fit_one_model <- function(model_type, prep, cv_pieces) {
+fit_one_model <- function(model_type, prep, cv_pieces, species_f) {
   mods <- models[[model_type]]
 
+  # File naming: NB reuses the main pipeline's original "New" naming
+  # (1_species_iCAR_2010_2025.R) so an already-fitted NB model can be pulled
+  # from disk instead of refit here — NB fits are the expensive part and
+  # 1_species_iCAR_2010_2025.R has usually already done them for every
+  # species. ZINB has no prior fit to reuse, so it gets its own "_ZINB_"
+  # tag. (NB's tag could switch to "_NB_" later; for now it must stay "New"
+  # to match what's already on disk and avoid re-running NB fits.)
+  name_tag        <- if (model_type == "NB") "New" else model_type
+  out_base        <- paste0(species_f, "_iCAR_", name_tag, "_", firstYear, "_", lastYear)
+  stanfit_file    <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
+  summ_file       <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+  cv_results_file <- file.path(output_dir, paste0(species_f, "_iCAR_cv_results_", lastYear, ".rds"))
+
   # Full fit (for convergence diagnostics) ---------------------------------
-  stanfit <- mods$full$sample(
-    data = prep$stan_data,
-    refresh = 0,
-    chains = 4, iter_sampling = 2000, iter_warmup = 2000,
-    parallel_chains = 4,
-    adapt_delta = 0.8,
-    max_treedepth = 10,
-    show_exceptions = FALSE,
-    output_dir = cmdstanr_output_dir
-  )
-  summ <- stanfit$summary()
+  if (model_type == "NB" && file.exists(summ_file)) {
+    cat("    [", model_type, "] Reusing existing fit:", basename(summ_file), "\n")
+    summ <- readRDS(summ_file)
+  } else {
+    stanfit <- mods$full$sample(
+      data = prep$stan_data,
+      refresh = 0,
+      chains = 4, iter_sampling = 2000, iter_warmup = 2000,
+      parallel_chains = 4,
+      adapt_delta = 0.8,
+      max_treedepth = 10,
+      show_exceptions = FALSE,
+      output_dir = cmdstanr_output_dir
+    )
+    summ <- stanfit$summary()
+
+    # Save fit + summary, tagged with model_type (New / ZINB) so this never
+    # overwrites a different model's output.
+    stanfit$save_object(stanfit_file)
+    saveRDS(summ, summ_file)
+  }
+
   max_rhat <- max(summ$rhat, na.rm = TRUE)
   min_ess  <- min(summ$ess_bulk, na.rm = TRUE)
   cat("    [", model_type, "] Max Rhat:", round(max_rhat, 4),
@@ -294,7 +332,14 @@ fit_one_model <- function(model_type, prep, cv_pieces) {
   cv_lppd <- NA
   cv_cor  <- NA
 
-  if (stan_data_cv[["ncounts_pred"]] > 0) {
+  if (model_type == "NB" && file.exists(cv_results_file)) {
+    cat("    [", model_type, "] Reusing existing CV results:", basename(cv_results_file), "\n")
+    cv_results <- readRDS(cv_results_file)
+    cv_lppd <- mean(cv_results$log_lik_mean)
+    cv_cor  <- cor(cv_results$count, cv_results$E_pred_count, method = "spearman")
+    cat("    [", model_type, "] CV lppd:", round(cv_lppd, 4),
+        " | Spearman r:", round(cv_cor, 3), "\n")
+  } else if (stan_data_cv[["ncounts_pred"]] > 0) {
     cv_fit <- mods$cv$sample(
       data = stan_data_cv,
       refresh = 0,
@@ -367,9 +412,9 @@ for (i in seq_len(nrow(target_spp))) {
     cv_pieces <- build_cv_data(prep)
 
     cat("  Fitting NB...\n")
-    nb   <- fit_one_model("NB",   prep, cv_pieces)
+    nb   <- fit_one_model("NB",   prep, cv_pieces, sp_f)
     cat("  Fitting ZINB...\n")
-    zinb <- fit_one_model("ZINB", prep, cv_pieces)
+    zinb <- fit_one_model("ZINB", prep, cv_pieces, sp_f)
 
     cmp <- bind_rows(nb, zinb) %>%
       mutate(species      = sp,

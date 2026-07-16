@@ -2,6 +2,11 @@
 ## Grassland birds: iCAR route-level trend model (fitting only)
 ## Time period: 2010-2025
 ##
+## Structure mirrors 1_CH_no_habitat_routes.R:
+##   - Settings block
+##   - fit_species(): full data-prep + model-fit pipeline for one species
+##   - Main loop: fit per species, save the fit + stan_data, collect diagnostics
+##
 ## This script FITS the models and saves, per species:
 ##   output/<species>_iCAR_New_<firstYear>_<lastYear>_stanfit.rds
 ##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds
@@ -38,8 +43,13 @@ cmdstanr_output_dir <- file.path(tempdir(), "cmdstan_output")
 if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive = TRUE)
 
 # Settings ----------------------------------------------------------------
-land_cover <- "grasslands"   # target group: must match a value in the
-                             # 'Group' column of spp_names_codes_group_aou.csv
+# Optional target-group filter: must match a value in the 'Group' column of
+# spp_names_codes_group_aou.csv (e.g. "grasslands"). Renamed from
+# land_cover -> bird_group for clarity, since it filters by species group,
+# not literal land cover. The filter() using it below is commented out by
+# default (all in_bbs species run); uncomment it to restrict to this group.
+bird_group <- "grasslands"
+
 firstYear  <- 2010
 lastYear   <- 2025
 dt         <- lastYear - firstYear
@@ -48,7 +58,7 @@ strat <- "bcr"
 
 # Re-fit control: if TRUE, ignore existing fits and re-run the model (needed
 # after changing the model, priors, or data thresholds).
-force_refit <- TRUE
+force_refit <- FALSE
 
 # Output directories
 output_dir <- here::here("output")
@@ -62,13 +72,20 @@ spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                    stringsAsFactors = FALSE)
 
 target_spp <- spp_df %>%
-  filter(Group == land_cover, in_bbs == TRUE) %>%
+  # filter(Group == bird_group) %>%
+  filter(in_bbs == TRUE) %>%
   distinct(Common.Name, Code, .keep_all = TRUE) %>%
   arrange(Common.Name)
 
+# Safe to use even if bird_group (line ~51) is commented out — falls back to
+# "all_species" so the console message and diagnostics CSV name below don't
+# error when the group-filter variable isn't defined.
+group_label <- if (exists("bird_group")) bird_group else "all_species"
+
 cat("=== iCAR route-level trend model ===\n")
-cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
-cat(land_cover, "species to fit (n =", nrow(target_spp), "):\n")
+cat("Group filter:", group_label, "(inactive — all in_bbs species below)\n")
+cat("Period:", firstYear, "-", lastYear, "\n")
+cat("Species to fit (n =", nrow(target_spp), "):\n")
 print(target_spp %>% select(Common.Name, Code, bbs_english))
 
 # Helper: convert species name to file-safe format ------------------------
@@ -88,7 +105,7 @@ cv_model <- cmdstan_model(cv_mod.file, stanc_options = list("O1"))
 # Returns a list with summ, route_map, realized_strata_map, new_data, and a
 # one-row diagnostics data.frame (max_rhat, min_ess, cv_lppd, cv_cor).
 # ==========================================================================
-fit_species <- function(species, species_bbs, species_f, land_cover, strat,
+fit_species <- function(species, species_bbs, species_f, strat,
                          firstYear, lastYear, slope_model, cv_model) {
 
   cat("    Running full data-prep + model fit for:", species, "\n")
@@ -345,7 +362,6 @@ for (i in seq_len(nrow(target_spp))) {
     fit_species(species = sp,
                 species_bbs = sp_bbs,
                 species_f = sp_f,
-                land_cover = land_cover,
                 strat = strat,
                 firstYear = firstYear,
                 lastYear = lastYear,
@@ -375,7 +391,7 @@ for (i in seq_len(nrow(target_spp))) {
 if (length(diagnostics_list) > 0) {
   diagnostics_all <- bind_rows(diagnostics_list)
   diag_csv <- file.path(output_dir,
-                        paste0("diagnostics_", land_cover, "_",
+                        paste0("diagnostics_", group_label, "_",
                                firstYear, "_", lastYear, ".csv"))
   write.csv(diagnostics_all, diag_csv, row.names = FALSE)
   cat("\nDiagnostics written to:", diag_csv, "\n")
