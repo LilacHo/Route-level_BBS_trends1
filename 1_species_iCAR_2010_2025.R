@@ -28,6 +28,8 @@
 ## Based on 1alt_Species_data_prep_bbsBayes2.R, Fitting_new_iCAR_slope_model.R
 ## =============================================================================
 
+rm(list = ls())
+
 library(bbsBayes2)
 library(tidyverse)
 library(cmdstanr)
@@ -53,7 +55,7 @@ if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive 
 # land_cover -> bird_group for clarity, since it filters by species group,
 # not literal land cover. The filter() using it below is commented out by
 # default (all in_bbs species run); uncomment it to restrict to this group.
-bird_group <- "grasslands"
+# bird_group <- "grasslands"
 
 firstYear  <- 2010
 lastYear   <- 2025

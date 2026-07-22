@@ -56,6 +56,6 @@ output/*.RData
 
 # Project output
 output/**/*.csv
-output/*.rds
+output/rds/
 output/**/*.txt
 output/**/*.png
