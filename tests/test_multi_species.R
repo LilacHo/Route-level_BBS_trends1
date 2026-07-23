@@ -223,8 +223,8 @@ for (sp in species_filter) {
   # 1) Per-model stanfit + summary outputs from 1c ---------------------------
   for (tag in model_tags_check) {
     out_base  <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-    stanfit_f <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
-    summ_f    <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+    stanfit_f <- file.path(rds_dir, paste0(out_base, "_stanfit.rds"))
+    summ_f    <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
     stan_data_f <- here::here("data", "stan_data",
                               paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
 

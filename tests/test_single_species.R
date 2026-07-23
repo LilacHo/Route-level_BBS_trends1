@@ -8,12 +8,13 @@
 ##
 ## STEP 0 (below) builds and saves the joined BBS + covariate "datafile" for
 ## this species DIRECTLY in this script, standalone, before touching 1c at
-## all. This mirrors 1_baseline_NB_fit.R (a working reference script that
-## joins these same grasslands.csv/developed.csv covariate files
-## successfully) and is the same logic now embedded in 1c's
-## prepare_species_data(). Building it here too means we can inspect and
-## confirm the join is correct in isolation — fast, no Stan compile/sample —
-## before spending time on the full 4-model Stan fit.
+## all. This mirrors 1_baseline_NB_fit.R (a working reference script) and is
+## the same logic now embedded in 1c's prepare_species_data(), extended to
+## the current 3-covariate set (data/grassland habitat.csv,
+## data/grassland anthro.csv, data/grassland habitat to anthro.csv). Building
+## it here too means we can inspect and confirm the join is correct in
+## isolation — fast, no Stan compile/sample — before spending time on the
+## full 4-model Stan fit.
 ##
 ## The earlier version of this test hit a real bug: 1c used
 ## strat = "bbs_usgs", which makes bbsBayes2 rename BBS routes differently
@@ -34,8 +35,8 @@
 ## same assumption the sourced scripts already make via here::i_am().
 ##
 ## Note: this still runs the real Stan sampler (4 chains x 2000 warmup + 2000
-## sampling per model, 4 models: base, grassland, developed,
-## grassland_developed) for the one species — it is a correctness/
+## sampling per model, 4 models: base, grassland_habitat, grassland_anthro,
+## grassland_habitat_to_anthro) for the one species — it is a correctness/
 ## wiring smoke test, not a fast unit test. If you want a quicker syntax-only
 ## check, temporarily lower chains/iter_warmup/iter_sampling inside
 ## 1c_species_iCAR_covariates.R's fit_one_covariate_model() before running.
@@ -89,8 +90,10 @@ cat("BBS observations before covariate join:", nrow(new_data_test),
     "(", length(unique(new_data_test$route)), "routes )\n")
 
 # Covariate lookups: "<StateNum>-<Route>" key, matches 1_baseline_NB_fit.R --
+# check.names = FALSE preserves value_col exactly as it appears in the CSV
+# header (needed since all three covariate names contain spaces).
 load_covariate_test <- function(file, value_col) {
-  read.csv(here::here("data", file), stringsAsFactors = FALSE) %>%
+  read.csv(here::here("data", file), stringsAsFactors = FALSE, check.names = FALSE) %>%
     transmute(route_key = paste(StateNum, Route, sep = "-"),
               year      = year,
               value     = .data[[value_col]]) %>%
@@ -98,25 +101,40 @@ load_covariate_test <- function(file, value_col) {
     distinct(route_key, year, .keep_all = TRUE)
 }
 
-grass_lookup_test <- load_covariate_test("grasslands.csv", "grasslands") %>%
-  rename(grassland = value)
-dev_lookup_test   <- load_covariate_test("developed.csv", "developed") %>%
-  rename(developed = value)
+grass_habitat_lookup_test <- load_covariate_test("grassland habitat.csv", "grassland habitat") %>%
+  rename(grassland_habitat = value)
+grass_anthro_lookup_test  <- load_covariate_test("grassland anthro.csv", "grassland anthro") %>%
+  rename(grassland_anthro = value)
+ghta_lookup_test          <- load_covariate_test("grassland habitat to anthro.csv", "grassland habitat to anthro") %>%
+  rename(grassland_habitat_to_anthro = value)
+
+# grassland habitat to anthro.csv is a year-over-year transition rate (mostly
+# zero/near-zero), so it only spans [0, ~0.15] raw — rescale by its own
+# observed max (matches 1c_species_iCAR_covariates.R) so it spans [0,1] like
+# grassland_habitat/grassland_anthro do, keeping gamma1 ~ normal(0,1)
+# sensible for it.
+ghta_scale_test <- max(ghta_lookup_test$grassland_habitat_to_anthro, na.rm = TRUE)
+ghta_lookup_test <- ghta_lookup_test %>%
+  mutate(grassland_habitat_to_anthro = grassland_habitat_to_anthro / ghta_scale_test)
+cat("Grassland-habitat-to-Anthro covariate rescaled by its observed max (",
+    round(ghta_scale_test, 6), ") to span [0,1]\n", sep = "")
 
 cat("Sample new_data_test$route values:      ",
     paste(head(unique(new_data_test$route), 6), collapse = ", "), "\n")
 cat("Sample covariate route_key values:      ",
-    paste(head(unique(grass_lookup_test$route_key), 6), collapse = ", "), "\n")
+    paste(head(unique(grass_habitat_lookup_test$route_key), 6), collapse = ", "), "\n")
 
-# Inner-join both covariates: this IS the "drop all unnecessary
-# observations" step — any route-year without both grassland and developed
-# values is dropped, since it never joins in.
+# Inner-join all three covariates: this IS the "drop all unnecessary
+# observations" step — any route-year without grassland_habitat,
+# grassland_anthro, AND grassland_habitat_to_anthro values is dropped, since
+# it never joins in.
 datafile <- new_data_test %>%
-  inner_join(grass_lookup_test, by = c("route" = "route_key", "r_year" = "year")) %>%
-  inner_join(dev_lookup_test,   by = c("route" = "route_key", "r_year" = "year"))
+  inner_join(grass_habitat_lookup_test, by = c("route" = "route_key", "r_year" = "year")) %>%
+  inner_join(grass_anthro_lookup_test,  by = c("route" = "route_key", "r_year" = "year")) %>%
+  inner_join(ghta_lookup_test,          by = c("route" = "route_key", "r_year" = "year"))
 
 match_rate_test <- nrow(datafile) / nrow(new_data_test)
-cat("\nAfter inner-joining grassland + developed covariates:\n")
+cat("\nAfter inner-joining grassland_habitat + grassland_anthro + grassland_habitat_to_anthro covariates:\n")
 cat("  Observations:", nrow(datafile), "of", nrow(new_data_test),
     " (", round(100 * match_rate_test, 1), "% kept )\n")
 cat("  Routes:", length(unique(datafile$route)), "of",
@@ -124,14 +142,14 @@ cat("  Routes:", length(unique(datafile$route)), "of",
 
 if (nrow(datafile) == 0) {
   stop("STEP 0 FAILED: the covariate join still drops everything. Compare ",
-       "the sample route values printed above against grasslands.csv / ",
-       "developed.csv's StateNum-Route combinations directly before going ",
-       "any further.")
+       "the sample route values printed above against 'grassland habitat.csv' / ",
+       "'grassland anthro.csv' / 'grassland habitat to anthro.csv''s ",
+       "StateNum-Route combinations directly before going any further.")
 }
 if (match_rate_test < 0.5) {
   warning("STEP 0: only ", round(100 * match_rate_test, 1), "% of ",
-          "observations matched both covariates — proceeding, but this is ",
-          "lower than expected for strat = 'bcr'. Inspect the datafile ",
+          "observations matched all three covariates — proceeding, but this ",
+          "is lower than expected for strat = 'bcr'. Inspect the datafile ",
           "before trusting the fit.")
 }
 
@@ -165,13 +183,15 @@ species_to_f <- function(sp) {
 }
 sp_f <- species_to_f(species_filter)
 
+model_tags_check <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
+
 checks <- list()
 
 # 1) Per-model stanfit + summary outputs from 1c ----------------------------
-for (tag in c("base", "grassland", "developed", "grassland_developed")) {
+for (tag in model_tags_check) {
   out_base  <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-  stanfit_f <- file.path(output_dir, paste0(out_base, "_stanfit.rds"))
-  summ_f    <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+  stanfit_f <- file.path(rds_dir, paste0(out_base, "_stanfit.rds"))
+  summ_f    <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
   stan_data_f <- here::here("data", "stan_data",
                             paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
 
@@ -196,7 +216,7 @@ if (file.exists(route_csv)) {
   sp_rows <- route_out[route_out$species == species_filter, ]
   checks[["2c: per-route CSV has rows for this species"]] <- nrow(sp_rows) > 0
   checks[["2c: per-route CSV has all 4 models for this species"]] <-
-    all(c("base", "grassland", "developed", "grassland_developed") %in% sp_rows$model)
+    all(model_tags_check %in% sp_rows$model)
   checks[["2c: base and covariate models have the SAME route count (shared reduced dataset)"]] <-
     length(unique(table(sp_rows$model))) == 1
 }
@@ -205,15 +225,11 @@ if (file.exists(model_csv)) {
   model_out <- read.csv(model_csv, stringsAsFactors = FALSE)
   sp_model_rows <- model_out[model_out$species == species_filter, ]
   checks[["2c: model-level CSV has rows for this species"]] <- nrow(sp_model_rows) > 0
-  checks[["2c: model-level CSV has non-NA gamma1 for grassland/developed/both"]] <-
+  checks[["2c: model-level CSV has non-NA gamma1 for grassland_habitat/grassland_anthro/grassland_habitat_to_anthro"]] <-
     all(!is.na(sp_model_rows$gamma1[sp_model_rows$model %in%
-                                    c("grassland", "developed", "grassland_developed")]))
-  checks[["2c: model-level CSV has NA gamma1/gamma2 for base"]] <-
-    all(is.na(sp_model_rows$gamma1[sp_model_rows$model == "base"])) &&
-    all(is.na(sp_model_rows$gamma2[sp_model_rows$model == "base"]))
-  checks[["2c: model-level CSV has non-NA gamma2 only for grassland_developed"]] <-
-    !is.na(sp_model_rows$gamma2[sp_model_rows$model == "grassland_developed"]) &&
-    all(is.na(sp_model_rows$gamma2[sp_model_rows$model %in% c("grassland", "developed", "base")]))
+                                    c("grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")]))
+  checks[["2c: model-level CSV has NA gamma1 for base"]] <-
+    all(is.na(sp_model_rows$gamma1[sp_model_rows$model == "base"]))
 }
 
 # Report ---------------------------------------------------------------------

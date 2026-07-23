@@ -20,7 +20,7 @@
 ##
 ## For all four models, reads the summary fit + stan_data saved by
 ## 1c_species_iCAR_covariates.R:
-##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
+##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
 ## and derives the same per-route quantities as 2_generate_route_trend_csvs.R
 ## (trend, trend_lci, trend_uci, rel_abundance from beta/alpha).
@@ -59,6 +59,7 @@ lastYear   <- 2025
 model_tags <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
 
 output_dir       <- here::here("output")
+rds_dir          <- here::here("output", "rds")   # matches 1c_species_iCAR_covariates.R
 combined_out_dir <- here::here("output", "species_routes_covariates")
 if (!dir.exists(combined_out_dir)) dir.create(combined_out_dir, recursive = TRUE)
 
@@ -111,7 +112,7 @@ for (i in seq_len(nrow(target_spp))) {
   for (tag in model_tags) {
 
     out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-    summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+    summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
     stan_data_file <- here::here("data", "stan_data",
                                  paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
 

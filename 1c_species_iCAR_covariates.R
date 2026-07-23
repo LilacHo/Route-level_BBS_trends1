@@ -72,8 +72,8 @@
 ## This script fits the models and saves, per species and per model tag
 ## ("base", "grassland_habitat", "grassland_anthro",
 ## "grassland_habitat_to_anthro"):
-##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_stanfit.rds
-##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
+##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_stanfit.rds
+##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
 ##
 ## No leave-future-out CV here: models/slope_iCAR_route_NB_cv.stan (used for
@@ -121,6 +121,10 @@ force_refit <- TRUE
 # Output directories
 output_dir <- here::here("output")
 if (!dir.exists(output_dir)) dir.create(output_dir)
+rds_dir <- here::here("output", "rds")   # all .rds fit output goes here, not
+                                          # directly in output/ (matches
+                                          # 1_species_iCAR_2010_2025.R)
+if (!dir.exists(rds_dir)) dir.create(rds_dir, recursive = TRUE)
 if (!dir.exists(here::here("data"))) dir.create(here::here("data"))
 if (!dir.exists(here::here("data", "maps"))) dir.create(here::here("data", "maps"), recursive = TRUE)
 if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", "stan_data"), recursive = TRUE)
@@ -423,8 +427,8 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   cat("    Fit time:", fit_time, "minutes\n")
 
   out_base <- paste0(species_f, "_iCAR_", model_tag, "_", firstYear, "_", lastYear)
-  stanfit$save_object(file.path(output_dir, paste0(out_base, "_stanfit.rds")))
-  saveRDS(summ, file.path(output_dir, paste0(out_base, "_summ_fit.rds")))
+  stanfit$save_object(file.path(rds_dir, paste0(out_base, "_stanfit.rds")))
+  saveRDS(summ, file.path(rds_dir, paste0(out_base, "_summ_fit.rds")))
 
   sp_data_file <- here::here("data", "stan_data",
                              paste0(species_f, "_", model_tag, "_",
@@ -480,7 +484,7 @@ for (i in seq_len(nrow(target_spp))) {
   # Skip data prep entirely if all four model outputs already exist
   all_exist <- all(vapply(model_tags, function(tag) {
     out_base  <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-    summ_file <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+    summ_file <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
     file.exists(summ_file)
   }, logical(1)))
 
@@ -506,7 +510,7 @@ for (i in seq_len(nrow(target_spp))) {
   # Fit each of the four models -----------------------------------------------
   for (tag in model_tags) {
     out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-    summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+    summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
     stan_data_file <- here::here("data", "stan_data",
                                  paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
     if (file.exists(summ_file) && file.exists(stan_data_file) && !force_refit) {
