@@ -3,8 +3,8 @@
 ## Time period: 2010-2025
 ##
 ## Reads the per-species model output saved by 1_species_iCAR_2010_2025.R:
-##   output/<species>_iCAR_New_<firstYear>_<lastYear>_summ_fit.rds   (summary)
-##   data/stan_data/<species>_iCAR_New_<firstYear>_<lastYear>_stan_data.RData
+##   output/rds/<species>_iCAR_NB_<firstYear>_<lastYear>_summ_fit.rds   (summary)
+##   data/stan_data/<species>_<firstYear>_<lastYear>_stan_data.RData
 ##     (loads route_map (sf), new_data, realized_strata_map, ...)
 ##
 ## and writes one per-route CSV per species (mirrors output/species_routes
@@ -50,7 +50,7 @@ lastYear   <- 2025
 overwrite <- TRUE
 
 # Directories
-output_dir <- here::here("output")
+rds_dir    <- here::here("output", "rds")   # all .rds fit output lives here
 sp_out_dir <- here::here("output", "species_routes")
 if (!dir.exists(sp_out_dir)) dir.create(sp_out_dir, recursive = TRUE)
 
@@ -91,8 +91,8 @@ for (i in seq_len(nrow(target_spp))) {
   }
 
   # Paths to pre-fitted output written by script 1
-  out_base       <- paste0(sp_f, "_iCAR_New_", firstYear, "_", lastYear)
-  summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
+  out_base       <- paste0(sp_f, "_iCAR_NB_", firstYear, "_", lastYear)
+  summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
   stan_data_file <- here::here("data", "stan_data",
                                paste0(sp_f, "_", firstYear, "_", lastYear, "_stan_data.RData"))
 

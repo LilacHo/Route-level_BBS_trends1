@@ -31,9 +31,11 @@ Fits the iCAR route-level trend model, one species at a time, over 2010-2025. Fo
 
 ### 2_generate_route_trend_csvs.R
 
-Post-processing only — no model fitting. Reads the saved posterior summaries from step 1 and converts the per-route `beta` (slope) and `alpha` (intercept) estimates into annual percent trends with 90% CIs and relative abundance.
+Post-processing only — no model fitting. Reads the saved posterior summaries from step 1 and writes, per route, the raw `alpha` (log-scale intercept) and `beta` (log-scale slope) posterior means alongside their back-transformed, interpretable versions: `trend` (annual % change, with a 90% CI) and `rel_abundance`.
 
 - Reads: `output/<species>_iCAR_New_2010_2025_summ_fit.rds`, `data/stan_data/<species>_2010_2025_stan_data.RData`
-- Writes: `output/species_routes/<species>_route_trends.csv`
+- Writes: `output/species_routes/<species>_route_trends.csv` with columns `species, species_code, route, latitude, longitude, alpha, beta, trend, trend_lci, trend_uci, rel_abundance`
+- `trend = 100 * (exp(beta) - 1)`: converts the log-scale annual slope `beta` into an annual percent change (`trend_lci`/`trend_uci` are the same transform applied to the 5th/95th posterior percentiles).
+- `rel_abundance = exp(alpha)`: converts the log-scale intercept `alpha` back to the count scale — the model's expected count for an average observer at that route in the fixed (mid-series) year.
 - New script for this repo — the source project has no direct equivalent step.
 
