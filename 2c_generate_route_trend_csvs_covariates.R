@@ -6,7 +6,11 @@
 ## Combines FOUR "model" sources per species, all fit by
 ## 1c_species_iCAR_covariates.R on the SAME covariate-reduced dataset (so
 ## they're directly comparable to each other): "base" (no covariates),
-## "grassland", "developed", "grassland_developed".
+## "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro".
+## All three non-base models are single-covariate fits (there is no joint
+## two-covariate model in this design — "grassland_anthro" here is a single
+## pre-composited covariate, Developed*+CultivatedCrops, not grassland and
+## anthro fit together).
 ##
 ## NOTE: "base" here is 1c's own no-covariate refit on the reduced dataset —
 ## NOT the full-dataset base fit from 1_species_iCAR_2010_2025.R /
@@ -31,13 +35,12 @@
 ##   2) Model-level file — one row per species/model (NOT per route), for
 ##      quantities that are constant across a species' routes:
 ##      output/species_routes_covariates/all_model_level_summary_<land_cover>_<firstYear>_<lastYear>.csv
-##      columns: species, species_code, model, n_routes, gamma1, gamma2
+##      columns: species, species_code, model, n_routes, gamma1
 ##
-## gamma1/gamma2 are the covariate effect(s) on log(lambda) — a single value
-## per species+model, not per-route, which is why they live in the separate
-## model-level file rather than being repeated down every route row. They are
-## NA for the "base" model (no covariates) and gamma2 is NA for the two
-## single-covariate models (grassland, developed).
+## gamma1 is the covariate effect on log(lambda) — a single value per
+## species+model, not per-route, which is why it lives in the separate
+## model-level file rather than being repeated down every route row. It is
+## NA for the "base" model (no covariate).
 ##
 ## This is a post-processing / combination step only; it does not fit or
 ## re-derive anything beyond what 2_generate_route_trend_csvs.R and
@@ -53,7 +56,7 @@ here::i_am("2c_generate_route_trend_csvs_covariates.R")
 land_cover <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2025
-model_tags <- c("base", "grassland", "developed", "grassland_developed")
+model_tags <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
 
 output_dir       <- here::here("output")
 combined_out_dir <- here::here("output", "species_routes_covariates")
@@ -91,7 +94,7 @@ route_cols <- c("species", "species_code", "model", "route",
                 "latitude", "longitude", "alpha", "beta",
                 "trend", "trend_lci", "trend_uci", "rel_abundance")
 model_cols <- c("species", "species_code", "model", "n_routes",
-                "gamma1", "gamma2")
+                "gamma1")
 
 all_route_rows <- list()
 all_model_rows <- list()
@@ -136,15 +139,10 @@ for (i in seq_len(nrow(target_spp))) {
                 alpha         = mean,
                 rel_abundance = exp(mean))
 
-    # Species+model-level covariate effect(s), not per-route. "base" has
-    # neither gamma1 nor gamma2; single-covariate models have only gamma1.
+    # Species+model-level covariate effect, not per-route. "base" has no
+    # gamma1; each of the three covariate models has exactly one.
     gamma1_val <- if ("gamma1" %in% summ$variable) {
       summ$mean[summ$variable == "gamma1"]
-    } else {
-      NA_real_
-    }
-    gamma2_val <- if ("gamma2" %in% summ$variable) {
-      summ$mean[summ$variable == "gamma2"]
     } else {
       NA_real_
     }
@@ -170,8 +168,7 @@ for (i in seq_len(nrow(target_spp))) {
       species_code = sp_code,
       model        = tag,
       n_routes     = nrow(route_trends),
-      gamma1       = gamma1_val,
-      gamma2       = gamma2_val
+      gamma1       = gamma1_val
     )
     cat("  [", tag, "] ", nrow(route_trends), "routes\n")
   }

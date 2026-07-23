@@ -2,22 +2,20 @@
 ## Grassland birds: iCAR route-level slope model + land-cover covariates
 ## Time period: 2010-2025
 ##
-## Variant of 1_species_iCAR_2010_2025.R that adds route-year land-cover
-## covariates (proportion grassland cover, proportion developed cover, range
-## [0,1]) to the log-linear predictor. For each species, fits FOUR models on
-## the SAME reduced dataset (only route-years where both grassland and
-## developed are non-NA — i.e. routes without covariate coverage are dropped
+## Fits FOUR models per species on the SAME reduced dataset (only route-years
+## where grassland_habitat, grassland_anthro, AND grassland_habitat_to_anthro
+## are all non-NA — i.e. routes without full covariate coverage are dropped
 ## entirely, not just the missing observations), so all four are directly
 ## comparable to each other:
 ##
-##   base (no covariate)       models/slope_iCAR_route_NB_New.stan
+##   base                      models/slope_iCAR_route_NB_New.stan
 ##     log(lambda[r,t]) = alpha[r] + beta[r]*t
-##   grassland only            models/slope_iCAR_route_NB_New_covariate.stan
-##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Grassland[r,t]
-##   developed only             models/slope_iCAR_route_NB_New_covariate.stan
-##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Developed[r,t]
-##   grassland & developed      models/slope_iCAR_route_NB_New_2covariates.stan
-##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Grassland[r,t] + gamma2*Developed[r,t]
+##   grassland_habitat          models/slope_iCAR_route_NB_New_covariate.stan
+##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*GrasslandHabitat[r,t]
+##   grassland_anthro           models/slope_iCAR_route_NB_New_covariate.stan
+##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*GrasslandAnthro[r,t]
+##   grassland_habitat_to_anthro  models/slope_iCAR_route_NB_New_covariate.stan
+##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*GrasslandHabitatToAnthro[r,t]
 ##
 ## NOTE: "base" here is a SEPARATE fit from 1_species_iCAR_2010_2025.R's own
 ## base fit. That script fits on the FULL dataset (all routes); this script's
@@ -26,11 +24,32 @@
 ## three models on identical data. Both fits are kept (different output file
 ## names), since they answer different questions.
 ##
-## Covariate data:
-##   data/grasslands.csv, data/developed.csv — one row per BBS route per year,
-##   with columns including CountryNum, StateNum, Route, year, and the
-##   covariate value (grasslands / developed), range [0,1], NA for inactive
-##   routes.
+## Covariate data (each one row per BBS route per year):
+##   data/grassland habitat.csv          — "grassland habitat" column.
+##     Confirmed equal to LndCov_71_GrasslandHerbaceous + LndCov_81_PastureHay
+##     (natural grassland + hayed/pastured grassland), range [0, 0.99].
+##   data/grassland anthro.csv           — "grassland anthro" column.
+##     Confirmed equal to the sum of the four Developed* NLCD classes (open
+##     space, low/medium/high intensity) plus CultivatedCrops, range [0, 1.0].
+##     This REPLACES the earlier data/Anthro.csv as the "anthro" covariate —
+##     Anthro.csv's definition couldn't be reconstructed from the NLCD
+##     land-cover components and is no longer used here.
+##   data/grassland habitat to anthro.csv — "grassland habitat to anthro"
+##     column, a year-over-year grassland-habitat-to-anthro transition
+##     metric, range [0, ~0.15], mean ~0.00095 (population sd/max ratio
+##     ~0.015 — even more zero-inflated/narrow than the earlier grasslands-
+##     to-Anthro metric it replaces). Rescaled by its own observed max below
+##     for the same reason grass_to_anthro was rescaled previously (see
+##     fit_one_covariate_model()/ghta-style comment there): raw values only
+##     span a sliver of [0,1], far narrower than gamma1 ~ normal(0,1)
+##     implicitly assumes, and standardizing (rather than max-rescaling) was
+##     shown empirically to collapse this class of covariate's effect toward
+##     zero, so max-rescaling is used again here.
+##
+## grassland_habitat and grassland_anthro are NOT rescaled — both already
+## span a wide, non-degenerate range within [0,1] (sd/max ~0.20 and ~0.27
+## respectively), the same situation as the earlier grassland/anthro
+## covariates, which were also used raw.
 ##
 ## Route-key format: new_data$route (from bbsBayes2::prepare_data()) is
 ## formatted "<StateNum>-<Route>" — but ONLY when stratified by "bcr"; the
@@ -43,15 +62,16 @@
 ## safety net.
 ##
 ## Per user decision (2026-07-13 conversation):
-##   - Counts with a missing (NA) grassland or developed value are dropped
-##     from that species' stan_data (reduces ncounts) — applied once, up
-##     front, so all four models (including "base") see identical data.
+##   - Counts with a missing (NA) covariate value are dropped from that
+##     species' stan_data (reduces ncounts) — applied once, up front, so all
+##     four models (including "base") see identical data.
 ##   - The 2010 gap in the covariate CSVs (they start at 2011) is NOT
 ##     specially handled here — 2010 counts simply end up with NA covariates
 ##     and are dropped by the rule above. No back-filling or year-shifting.
 ##
 ## This script fits the models and saves, per species and per model tag
-## ("base", "grassland", "developed", "grassland_developed"):
+## ("base", "grassland_habitat", "grassland_anthro",
+## "grassland_habitat_to_anthro"):
 ##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_stanfit.rds
 ##   output/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
@@ -108,8 +128,10 @@ if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", 
 # Land-cover covariate lookups ---------------------------------------------
 # One row per route per year; build a "<StateNum>-<Route>" key to match
 # new_data$route below, and keep just (route_key, year, value).
+# check.names = FALSE preserves value_col exactly as it appears in the CSV
+# header (needed since all three new covariate names contain spaces).
 load_covariate <- function(file, value_col) {
-  read.csv(here::here("data", file), stringsAsFactors = FALSE) %>%
+  read.csv(here::here("data", file), stringsAsFactors = FALSE, check.names = FALSE) %>%
     transmute(route_key = paste(StateNum, Route, sep = "-"),
               year      = year,
               value     = .data[[value_col]]) %>%
@@ -117,15 +139,37 @@ load_covariate <- function(file, value_col) {
     distinct(route_key, year, .keep_all = TRUE)
 }
 
-grass_lookup <- load_covariate("grasslands.csv", "grasslands") %>%
-  rename(grassland = value)
-dev_lookup   <- load_covariate("developed.csv", "developed") %>%
-  rename(developed = value)
+grass_habitat_lookup <- load_covariate("grassland habitat.csv", "grassland habitat") %>%
+  rename(grassland_habitat = value)
+grass_anthro_lookup  <- load_covariate("grassland anthro.csv", "grassland anthro") %>%
+  rename(grassland_anthro = value)
+ghta_lookup           <- load_covariate("grassland habitat to anthro.csv", "grassland habitat to anthro") %>%
+  rename(grassland_habitat_to_anthro = value)
 
-cat("Grassland covariate: ", nrow(grass_lookup), " route-year rows (",
-    length(unique(grass_lookup$route_key)), " routes)\n", sep = "")
-cat("Developed covariate: ", nrow(dev_lookup), " route-year rows (",
-    length(unique(dev_lookup$route_key)), " routes)\n", sep = "")
+# grassland habitat to anthro.csv is a year-over-year TRANSITION rate
+# (fraction of a route's area converting from grassland habitat to
+# anthropogenic cover that year), not a standing-stock proportion like
+# grassland_habitat/grassland_anthro — most routes see zero or near-zero
+# conversion in a given year, so raw values only span [0, ~0.15] with a mean
+# near 0.00095. gamma1 ~ normal(0,1) in
+# slope_iCAR_route_NB_New_covariate.stan implicitly assumes a covariate that
+# swings across roughly [0,1], so left un-rescaled this covariate could
+# barely move the fit regardless of the true relationship. Rescaling by its
+# own observed max (a pure linear rescale — order/ratios between routes are
+# unchanged, zeros stay zero) stretches it back out to [0,1], matching the
+# scale grassland_habitat/grassland_anthro already use and keeping the same
+# bounded single-covariate Stan model/prior valid for it.
+ghta_scale <- max(ghta_lookup$grassland_habitat_to_anthro, na.rm = TRUE)
+ghta_lookup <- ghta_lookup %>% mutate(grassland_habitat_to_anthro = grassland_habitat_to_anthro / ghta_scale)
+cat("Grassland-habitat-to-Anthro covariate rescaled by its observed max (",
+    round(ghta_scale, 6), ") to span [0,1]\n", sep = "")
+
+cat("Grassland habitat covariate:           ", nrow(grass_habitat_lookup), " route-year rows (",
+    length(unique(grass_habitat_lookup$route_key)), " routes)\n", sep = "")
+cat("Grassland anthro covariate:            ", nrow(grass_anthro_lookup), " route-year rows (",
+    length(unique(grass_anthro_lookup$route_key)), " routes)\n", sep = "")
+cat("Grassland habitat to anthro covariate:  ", nrow(ghta_lookup), " route-year rows (",
+    length(unique(ghta_lookup$route_key)), " routes)\n", sep = "")
 
 # Target group species list -----------------------------------------------
 spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
@@ -154,16 +198,14 @@ species_to_f <- function(sp) {
   gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
 }
 
-# Compile the three Stan models once (reused across species) --------------
+# Compile the Stan models once (reused across species) ---------------------
 model_base   <- cmdstan_model("models/slope_iCAR_route_NB_New.stan",
                               stanc_options = list("O1"))
 model_single <- cmdstan_model("models/slope_iCAR_route_NB_New_covariate.stan",
                               stanc_options = list("O1"))
-model_double <- cmdstan_model("models/slope_iCAR_route_NB_New_2covariates.stan",
-                              stanc_options = list("O1"))
 
 # Four model tags fit per species, on the same prepared (reduced) dataset --
-model_tags <- c("base", "grassland", "developed", "grassland_developed")
+model_tags <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
 
 # ==========================================================================
 # Function: data-prep pipeline for one species (BBS data, covariate join,
@@ -174,7 +216,7 @@ model_tags <- c("base", "grassland", "developed", "grassland_developed")
 # ==========================================================================
 prepare_species_data <- function(species, species_bbs, strat,
                                  firstYear, lastYear,
-                                 grass_lookup, dev_lookup) {
+                                 grass_habitat_lookup, grass_anthro_lookup, ghta_lookup) {
 
   cat("    Preparing data for:", species, "\n")
 
@@ -217,11 +259,13 @@ prepare_species_data <- function(species, species_bbs, strat,
   # Join land-cover covariates by route + calendar year ---------------------
   n_before <- nrow(new_data)
   new_data <- new_data %>%
-    left_join(grass_lookup, by = c("route" = "route_key", "r_year" = "year")) %>%
-    left_join(dev_lookup,   by = c("route" = "route_key", "r_year" = "year"))
+    left_join(grass_habitat_lookup, by = c("route" = "route_key", "r_year" = "year")) %>%
+    left_join(grass_anthro_lookup,  by = c("route" = "route_key", "r_year" = "year")) %>%
+    left_join(ghta_lookup,          by = c("route" = "route_key", "r_year" = "year"))
 
-  match_rate <- mean(!is.na(new_data$grassland) & !is.na(new_data$developed))
-  cat("    Covariate match rate (both grassland & developed present):",
+  match_rate <- mean(!is.na(new_data$grassland_habitat) & !is.na(new_data$grassland_anthro) &
+                      !is.na(new_data$grassland_habitat_to_anthro))
+  cat("    Covariate match rate (grassland_habitat, grassland_anthro & grassland_habitat_to_anthro all present):",
       round(100 * match_rate, 1), "%\n")
 
   # Diagnostic: always print a few sample route IDs from each side of the
@@ -231,23 +275,25 @@ prepare_species_data <- function(species, species_bbs, strat,
   cat("    Sample new_data$route values:      ",
       paste(head(unique(new_data$route), 6), collapse = ", "), "\n")
   cat("    Sample covariate route_key values: ",
-      paste(head(unique(grass_lookup$route_key), 6), collapse = ", "), "\n")
+      paste(head(unique(grass_habitat_lookup$route_key), 6), collapse = ", "), "\n")
 
   if (match_rate < 0.5) {
-    stop("Less than half of observations matched a grassland/developed value ",
-         "for ", species, " — new_data$route doesn't look like ",
-         "'<StateNum>-<Route>'. Compare the sample values printed above. ",
-         "This previously happened because strat was 'bbs_usgs' instead of ",
-         "'bcr' (bbsBayes2 renames routes differently per stratification); ",
-         "if strat is already 'bcr', check the continental-US filter and ",
-         "the key construction in load_covariate() instead.")
+    stop("Less than half of observations matched a grassland_habitat/grassland_anthro/",
+         "grassland_habitat_to_anthro value for ", species, " — new_data$route doesn't ",
+         "look like '<StateNum>-<Route>'. Compare the sample values printed ",
+         "above. This previously happened because strat was 'bbs_usgs' ",
+         "instead of 'bcr' (bbsBayes2 renames routes differently per ",
+         "stratification); if strat is already 'bcr', check the ",
+         "continental-US filter and the key construction in ",
+         "load_covariate() instead.")
   }
 
   # Per user decision: drop counts with a missing covariate (rather than
   # impute or special-case the pre-2011 gap in the covariate CSVs). Dropped
-  # once here, up front, so grassland-only, developed-only, and the combined
-  # model all fit on the same rows.
-  new_data <- new_data %>% filter(!is.na(grassland), !is.na(developed))
+  # once here, up front, so grassland_habitat-only, grassland_anthro-only,
+  # grassland_habitat_to_anthro-only, and base all fit on the same rows.
+  new_data <- new_data %>% filter(!is.na(grassland_habitat), !is.na(grassland_anthro),
+                                   !is.na(grassland_habitat_to_anthro))
   n_dropped <- n_before - nrow(new_data)
   cat("    Dropped", n_dropped, "of", n_before,
       "observations with missing covariate data\n")
@@ -331,9 +377,9 @@ prepare_species_data <- function(species, species_bbs, strat,
 }
 
 # ==========================================================================
-# Function: fit one of the four models (base, grassland, developed,
-# grassland_developed) for one species, given the shared prepared data from
-# prepare_species_data(). Returns a one-row
+# Function: fit one of the four models (base, grassland_habitat,
+# grassland_anthro, grassland_habitat_to_anthro) for one species, given the
+# shared prepared data from prepare_species_data(). Returns a one-row
 # diagnostics data.frame (or NULL on failure, handled by the caller).
 # ==========================================================================
 fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
@@ -342,20 +388,19 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   new_data       <- prepped$new_data
   base_stan_data <- prepped$base_stan_data
 
-  # Covariate field(s) + Stan model for this tag ----------------------------
+  # Covariate field + Stan model for this tag --------------------------------
   if (model_tag == "base") {
     stan_model <- model_base
     stan_data  <- base_stan_data
-  } else if (model_tag == "grassland") {
+  } else if (model_tag == "grassland_habitat") {
     stan_model <- model_single
-    stan_data  <- c(base_stan_data, list(covariate = new_data$grassland))
-  } else if (model_tag == "developed") {
+    stan_data  <- c(base_stan_data, list(covariate = new_data$grassland_habitat))
+  } else if (model_tag == "grassland_anthro") {
     stan_model <- model_single
-    stan_data  <- c(base_stan_data, list(covariate = new_data$developed))
-  } else if (model_tag == "grassland_developed") {
-    stan_model <- model_double
-    stan_data  <- c(base_stan_data, list(grassland = new_data$grassland,
-                                         developed = new_data$developed))
+    stan_data  <- c(base_stan_data, list(covariate = new_data$grassland_anthro))
+  } else if (model_tag == "grassland_habitat_to_anthro") {
+    stan_model <- model_single
+    stan_data  <- c(base_stan_data, list(covariate = new_data$grassland_habitat_to_anthro))
   } else {
     stop("Unknown model_tag: ", model_tag)
   }
@@ -386,20 +431,15 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
                                     firstYear, "_", lastYear, "_stan_data.RData"))
   save(list = c("stan_data", "new_data", "model_tag"), file = sp_data_file)
 
-  # Convergence diagnostics + covariate effect(s) ---------------------------
+  # Convergence diagnostics + covariate effect -------------------------------
   max_rhat <- max(summ$rhat, na.rm = TRUE)
   min_ess  <- min(summ$ess_bulk, na.rm = TRUE)
 
-  # "base" has no gamma parameters at all; single-covariate models have only
-  # gamma1; the double-covariate model has both. Extract defensively so a
-  # missing variable (rather than an unexpected one) never errors here.
+  # "base" has no gamma1 parameter at all; the three covariate models each
+  # have exactly one (gamma1). Extract defensively so a missing variable
+  # (rather than an unexpected one) never errors here.
   gamma1_mean <- if ("gamma1" %in% summ$variable) {
     summ$mean[summ$variable == "gamma1"]
-  } else {
-    NA_real_
-  }
-  gamma2_mean <- if ("gamma2" %in% summ$variable) {
-    summ$mean[summ$variable == "gamma2"]
   } else {
     NA_real_
   }
@@ -407,7 +447,6 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   cat("    Max Rhat:", round(max_rhat, 4),
       " | Min ESS:", round(min_ess, 0),
       if (!is.na(gamma1_mean)) paste(" | gamma1:", round(gamma1_mean, 4)) else "",
-      if (!is.na(gamma2_mean)) paste(" | gamma2:", round(gamma2_mean, 4)) else "",
       "\n")
 
   data.frame(
@@ -416,7 +455,6 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
     max_rhat    = round(max_rhat, 4),
     min_ess     = round(min_ess, 0),
     gamma1_mean = round(gamma1_mean, 4),
-    gamma2_mean = if (is.na(gamma2_mean)) NA_real_ else round(gamma2_mean, 4),
     n_obs       = nrow(new_data),
     n_dropped_missing_cov = prepped$n_dropped,
     fit_min     = fit_time
@@ -451,11 +489,13 @@ for (i in seq_len(nrow(target_spp))) {
     next
   }
 
-  # Prepare data once (shared across all four model fits) -------------------
+  # Prepare data once (shared across all four model fits) --------------------
   prepped <- tryCatch(
     prepare_species_data(species = sp, species_bbs = sp_bbs, strat = strat,
                          firstYear = firstYear, lastYear = lastYear,
-                         grass_lookup = grass_lookup, dev_lookup = dev_lookup),
+                         grass_habitat_lookup = grass_habitat_lookup,
+                         grass_anthro_lookup = grass_anthro_lookup,
+                         ghta_lookup = ghta_lookup),
     error = function(e) {
       message("  [ERROR] Data prep failed for ", sp, ": ", conditionMessage(e))
       return(NULL)
@@ -463,7 +503,7 @@ for (i in seq_len(nrow(target_spp))) {
   )
   if (is.null(prepped)) next
 
-  # Fit each of the four models ----------------------------------------------
+  # Fit each of the four models -----------------------------------------------
   for (tag in model_tags) {
     out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
     summ_file      <- file.path(output_dir, paste0(out_base, "_summ_fit.rds"))
