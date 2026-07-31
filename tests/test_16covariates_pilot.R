@@ -64,7 +64,9 @@ here::i_am("tests/test_16covariates_pilot.R")
 source(here::here("functions", "neighbours_define_voronoi.R"))
 
 # Ensure cmdstanr writes output to CSV (default) and set output_dir for temp
-# files, matching 1c_species_iCAR_covariates.R.
+# files, matching 1c_species_iCAR_covariates.R. Each species gets its own
+# subfolder under here (created/deleted inside fit_one_16covariate_model())
+# so raw per-chain CSVs don't pile up in %TEMP% across the species loop.
 cmdstanr_output_dir <- file.path(tempdir(), "cmdstan_output")
 if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive = TRUE)
 
@@ -361,6 +363,11 @@ fit_one_16covariate_model <- function(species, species_f, prepped,
 
   cat("    Fitting 16-covariate model for", species, "...\n")
 
+  # Per-species output subfolder so raw cmdstan CSVs stay isolated and can
+  # be deleted right after this species' fit is saved to .rds.
+  species_output_dir <- file.path(cmdstanr_output_dir, species_f)
+  if (!dir.exists(species_output_dir)) dir.create(species_output_dir, recursive = TRUE)
+
   stanfit <- stan_model$sample(
     data = stan_data,
     refresh = 400,
@@ -369,7 +376,7 @@ fit_one_16covariate_model <- function(species, species_f, prepped,
     adapt_delta = 0.8,
     max_treedepth = 10,
     show_exceptions = TRUE,
-    output_dir = cmdstanr_output_dir
+    output_dir = species_output_dir
   )
 
   # $sample() itself does NOT error even when every chain crashes — it
@@ -398,6 +405,10 @@ fit_one_16covariate_model <- function(species, species_f, prepped,
                              paste0(species_f, "_16covariates_",
                                     firstYear, "_", lastYear, "_stan_data.RData"))
   save(list = c("stan_data", "cov_meta"), file = sp_data_file)
+
+  # Raw per-chain CSVs are no longer needed once the fit is saved above —
+  # delete them now instead of letting them accumulate in %TEMP%.
+  unlink(species_output_dir, recursive = TRUE)
 
   max_rhat <- max(summ$rhat, na.rm = TRUE)
   min_ess  <- min(summ$ess_bulk, na.rm = TRUE)

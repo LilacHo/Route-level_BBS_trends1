@@ -97,6 +97,9 @@ source("functions/posterior_summary_functions.R")
 # Ensure cmdstanr writes output to CSV (default) and set output_dir for temp
 # files. This avoids the "No CmdStan config files found" error by using
 # output_dir so cmdstanr can find its files.
+# Each species/model_tag combo gets its own subfolder under here (created/
+# deleted inside fit_one_covariate_model()) so raw per-chain CSVs don't pile
+# up in %TEMP% across a whole run of many species x model tags.
 cmdstanr_output_dir <- file.path(tempdir(), "cmdstan_output")
 if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive = TRUE)
 
@@ -411,6 +414,11 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
 
   cat("    Fitting model:", model_tag, "\n")
 
+  # Per-species/model_tag output subfolder so raw cmdstan CSVs stay isolated
+  # and can be deleted right after this fit is saved to .rds.
+  run_output_dir <- file.path(cmdstanr_output_dir, paste0(species_f, "_", model_tag))
+  if (!dir.exists(run_output_dir)) dir.create(run_output_dir, recursive = TRUE)
+
   stanfit <- stan_model$sample(
     data = stan_data,
     refresh = 400,
@@ -419,7 +427,7 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
     adapt_delta = 0.8,
     max_treedepth = 10,
     show_exceptions = FALSE,
-    output_dir = cmdstanr_output_dir
+    output_dir = run_output_dir
   )
 
   summ <- stanfit$summary()
@@ -429,6 +437,10 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   out_base <- paste0(species_f, "_iCAR_", model_tag, "_", firstYear, "_", lastYear)
   stanfit$save_object(file.path(rds_dir, paste0(out_base, "_stanfit.rds")))
   saveRDS(summ, file.path(rds_dir, paste0(out_base, "_summ_fit.rds")))
+
+  # Raw per-chain CSVs are no longer needed once the fit is saved above —
+  # delete them now instead of letting them accumulate in %TEMP%.
+  unlink(run_output_dir, recursive = TRUE)
 
   sp_data_file <- here::here("data", "stan_data",
                              paste0(species_f, "_", model_tag, "_",
