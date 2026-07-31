@@ -46,6 +46,9 @@ source("functions/posterior_summary_functions.R")
 # Ensure cmdstanr writes output to CSV (default) and set output_dir for temp
 # files. This avoids the "No CmdStan config files found" error by using
 # output_dir so cmdstanr can find its files.
+# Each species gets its own subfolder under here (created/deleted inside
+# fit_species()) so raw per-chain CSVs don't pile up in %TEMP% across a
+# whole run of 100+ species.
 cmdstanr_output_dir <- file.path(tempdir(), "cmdstan_output")
 if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive = TRUE)
 
@@ -224,6 +227,11 @@ fit_species <- function(species, species_bbs, species_f, strat,
        file = sp_data_file)
 
   # Fit iCAR model ---------------------------------------------------------
+  # Per-species output subfolder so raw cmdstan CSVs stay isolated and can
+  # be deleted right after this species' fit is saved to .rds.
+  species_output_dir <- file.path(cmdstanr_output_dir, species_f)
+  if (!dir.exists(species_output_dir)) dir.create(species_output_dir, recursive = TRUE)
+
   stanfit <- slope_model$sample(
     data = stan_data,
     refresh = 400,
@@ -232,7 +240,7 @@ fit_species <- function(species, species_bbs, species_f, strat,
     adapt_delta = 0.8,
     max_treedepth = 10,
     show_exceptions = FALSE,
-    output_dir = cmdstanr_output_dir
+    output_dir = species_output_dir
   )
 
   summ <- stanfit$summary()
@@ -242,6 +250,11 @@ fit_species <- function(species, species_bbs, species_f, strat,
   out_base <- paste0(species_f, "_iCAR_NB_", firstYear, "_", lastYear)
   stanfit$save_object(file.path(rds_dir, paste0(out_base, "_stanfit.rds")))
   saveRDS(summ, file.path(rds_dir, paste0(out_base, "_summ_fit.rds")))
+
+  # Raw per-chain CSVs are no longer needed once the fit is saved above —
+  # delete them now instead of letting them accumulate in %TEMP% for every
+  # species in the run.
+  unlink(species_output_dir, recursive = TRUE)
 
   # Convergence diagnostics ------------------------------------------------
   max_rhat <- max(summ$rhat, na.rm = TRUE)
