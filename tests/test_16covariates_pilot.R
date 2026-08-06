@@ -1,7 +1,7 @@
 ## =============================================================================
 ## Pilot test: iCAR route-level slope model + 16 simultaneous land-cover
-## covariates (models/slope_iCAR_route_NB_New_16covariates.stan), across a
-## 10-species panel of grassland birds.
+## covariates (models/slope_iCAR_route_NB_New_16covariates.stan), run once per
+## bird group across several groups, each with its own N-species panel.
 ##
 ## Unlike 1c_species_iCAR_covariates.R / tests/test_multi_species.R (which fit
 ## FIVE separate models built from 3 covariates: base, grassland, anthro,
@@ -36,19 +36,28 @@
 ## 16 (shared reduced dataset, same "same data for a fair comparison"
 ## principle used throughout this project) -> Voronoi spatial neighbours.
 ##
-## This is a PILOT: 10 species, one 16-covariate model each (real sampler
-## settings — 4 chains x 2000 warmup + 2000 sampling — same as the production
-## pipeline), not a fast unit test. Lower chains/iter below if a quick smoke
-## test is needed instead.
+## This is a PILOT: real sampler settings (4 chains x 2000 warmup + 2000
+## sampling — same as the production pipeline), not a fast unit test. Lower
+## chains/iter below if a quick smoke test is needed instead.
+##
+## Bird groups + species panels: species_filter is no longer a single
+## hand-picked list — instead, bird_groups (below) lists every Group to pilot,
+## and for each one a panel of n_species_per_group species is picked
+## automatically from data/spp_names_codes_group_aou.csv (Group == g,
+## in_bbs == TRUE, first N alphabetically), so adding/removing a group doesn't
+## require hand-curating a species list. The whole prep+fit+combine+check
+## pipeline runs once per group, in sequence.
 ##
 ## Outputs (per species), all under a dedicated subdirectory so they don't mix
 ## with the 5-model pipeline's output/ files:
 ##   output/covariates16/<species>_iCAR_16covariates_<firstYear>_<lastYear>_stanfit.rds
 ##   output/covariates16/<species>_iCAR_16covariates_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/stan_data/<species>_16covariates_<firstYear>_<lastYear>_stan_data.RData
-## Combined across all species:
-##   output/covariates16/pilot_16covariates_gamma_summary.csv   (species x covariate)
-##   output/covariates16/pilot_16covariates_diagnostics.csv     (species-level fit diagnostics)
+## Combined per bird group (bird_group in the filename so groups don't
+## overwrite each other):
+##   output/covariates16/pilot_16covariates_gamma_summary_<bird_group>.csv         (species x covariate)
+##   output/covariates16/pilot_16covariates_gamma_summary_short_<bird_group>.csv   (species x NLCD code, wide)
+##   output/covariates16/pilot_16covariates_diagnostics_<bird_group>.csv          (species-level fit diagnostics)
 ## =============================================================================
 
 library(bbsBayes2)
@@ -79,22 +88,22 @@ strat <- "bcr"   # NOT "bbs_usgs" — see 1c_species_iCAR_covariates.R for why.
 # Re-fit control: if TRUE, ignore existing fits and re-run the model.
 force_refit <- TRUE
 
-# 10-species pilot panel: all previously confirmed working in the 5-model
-# pipeline (Baird's Sparrow, Bobolink, Burrowing Owl, Chestnut-collared
-# Longspur, Grasshopper Sparrow) plus 5 more well-sampled BBS grassland
-# species, for a broader but still tractable pilot.
-species_filter <- c(
-  "Baird's Sparrow",
-  "Bobolink",
-  "Burrowing Owl",
-  "Chestnut-collared Longspur",
-  "Grasshopper Sparrow",
-  "Dickcissel",
-  "Eastern Meadowlark",
-  "Western Meadowlark",
-  "Vesper Sparrow",
-  "Savannah Sparrow"
+# Bird groups to pilot (must match values in the Group column of
+# data/spp_names_codes_group_aou.csv) and how many species to pick per group.
+# The whole prep+fit+combine+check pipeline below runs once per group.
+bird_groups <- c(
+  "aridlands",
+  "boreal_forests",
+  "coastal",
+  "eastern_forests",
+  "grasslands",
+  "marshlands",
+  "subtropical_forests",
+  "urban_suburban",
+  "waterbirds",
+  "western_forests"
 )
+n_species_per_group <- 8
 
 # Output directories ----------------------------------------------------------
 output_dir16 <- here::here("output", "covariates16")
@@ -163,6 +172,33 @@ for (cat_name in cov_meta$category) {
 
 spp_df16 <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                      stringsAsFactors = FALSE)
+
+# Build an n_species_per_group-species panel per bird group, picked
+# deterministically (alphabetically by Common.Name, restricted to
+# in_bbs == TRUE) so this pilot is reproducible across groups without having
+# to hand-curate a "well-known species" list for every group the way the
+# earlier aridlands-only pilot did.
+group_species <- function(g, n = n_species_per_group) {
+  spp_df16 %>%
+    filter(Group == g, in_bbs == TRUE) %>%
+    distinct(Common.Name, .keep_all = TRUE) %>%
+    arrange(Common.Name) %>%
+    slice_head(n = n) %>%
+    pull(Common.Name)
+}
+
+species_by_group <- setNames(lapply(bird_groups, group_species), bird_groups)
+
+cat("\nSpecies panels selected per bird group (first", n_species_per_group,
+    "alphabetically, in_bbs = TRUE):\n")
+for (g in bird_groups) {
+  cat(" ", g, "(", length(species_by_group[[g]]), "species ):",
+      paste(species_by_group[[g]], collapse = ", "), "\n")
+  if (length(species_by_group[[g]]) < n_species_per_group) {
+    warning("Group '", g, "' has only ", length(species_by_group[[g]]),
+            " in_bbs species available (< ", n_species_per_group, " requested).")
+  }
+}
 
 ## ============================================================================
 ## Function: data-prep pipeline for one species (BBS data, join all K
@@ -440,147 +476,219 @@ fit_one_16covariate_model <- function(species, species_f, prepped,
 }
 
 ## ============================================================================
-## Compile the 16-covariate Stan model once
+## Compile the 16-covariate Stan model once (shared across every bird group)
 ## ============================================================================
 cat("\nCompiling models/slope_iCAR_route_NB_New_16covariates.stan...\n")
 model_16cov <- cmdstan_model(here::here("models", "slope_iCAR_route_NB_New_16covariates.stan"),
                              stanc_options = list("O1"))
 
 ## ============================================================================
-## Main loop: for each species, prepare data + fit the 16-covariate model
+## Outer loop: run the full prep + fit + combine + check pipeline once per
+## bird group, using that group's auto-selected species_filter.
 ## ============================================================================
-gamma_list <- list()
-diagnostics_list <- list()
+grand_all_checks <- list()
 
-for (i in seq_along(species_filter)) {
-  sp <- species_filter[i]
-  sp_f <- species_to_f(sp)
+for (bird_group in bird_groups) {
 
-  cat("\n================================================================\n")
-  cat("  [", i, "/", length(species_filter), "]", sp, "\n")
-  cat("================================================================\n")
+  species_filter <- species_by_group[[bird_group]]
 
-  sp_row <- spp_df16[spp_df16$Common.Name == sp, ][1, ]
-  if (is.na(sp_row$Common.Name)) {
-    message("  [ERROR] Species '", sp, "' not found in spp_names_codes_group_aou.csv — skipping.")
-    next
-  }
-  sp_bbs <- sp_row$bbs_english
+  cat("\n\n################################################################\n")
+  cat("# BIRD GROUP:", bird_group, " (", length(species_filter), "species )\n")
+  cat("################################################################\n")
 
-  out_base  <- paste0(sp_f, "_iCAR_16covariates_", firstYear, "_", lastYear)
-  summ_file <- file.path(output_dir16, paste0(out_base, "_summ_fit.rds"))
-
-  if (file.exists(summ_file) && !force_refit) {
-    cat("  Skipping (already fitted):", basename(summ_file), "\n")
+  if (length(species_filter) == 0) {
+    message("  [WARN] No in_bbs species found for group '", bird_group, "' — skipping group.")
     next
   }
 
-  prepped <- tryCatch(
-    prepare_species_data_16(species = sp, species_bbs = sp_bbs, strat = strat,
-                            firstYear = firstYear, lastYear = lastYear,
-                            cov_lookups = cov_lookups, cov_meta = cov_meta),
-    error = function(e) {
-      message("  [ERROR] Data prep failed for ", sp, ": ", conditionMessage(e))
-      return(NULL)
+  # --------------------------------------------------------------------------
+  # Main loop: for each species, prepare data + fit the 16-covariate model
+  # --------------------------------------------------------------------------
+  gamma_list <- list()
+  diagnostics_list <- list()
+
+  for (i in seq_along(species_filter)) {
+    sp <- species_filter[i]
+    sp_f <- species_to_f(sp)
+
+    cat("\n================================================================\n")
+    cat("  [", bird_group, i, "/", length(species_filter), "]", sp, "\n")
+    cat("================================================================\n")
+
+    sp_row <- spp_df16[spp_df16$Common.Name == sp, ][1, ]
+    if (is.na(sp_row$Common.Name)) {
+      message("  [ERROR] Species '", sp, "' not found in spp_names_codes_group_aou.csv — skipping.")
+      next
     }
-  )
-  if (is.null(prepped)) next
+    sp_bbs <- sp_row$bbs_english
 
-  fit_result <- tryCatch(
-    fit_one_16covariate_model(species = sp, species_f = sp_f, prepped = prepped,
-                              stan_model = model_16cov, firstYear = firstYear,
-                              lastYear = lastYear, cov_meta = cov_meta),
-    error = function(e) {
-      message("  [ERROR] 16-covariate model fit failed for ", sp, ": ", conditionMessage(e))
-      return(NULL)
+    out_base  <- paste0(sp_f, "_iCAR_16covariates_", firstYear, "_", lastYear)
+    summ_file <- file.path(output_dir16, paste0(out_base, "_summ_fit.rds"))
+
+    if (file.exists(summ_file) && !force_refit) {
+      cat("  Skipping (already fitted):", basename(summ_file), "\n")
+      next
     }
-  )
-  if (is.null(fit_result)) next
 
-  gamma_list[[sp]] <- fit_result$gamma_rows
-  diagnostics_list[[sp]] <- fit_result$diagnostics_row
+    prepped <- tryCatch(
+      prepare_species_data_16(species = sp, species_bbs = sp_bbs, strat = strat,
+                              firstYear = firstYear, lastYear = lastYear,
+                              cov_lookups = cov_lookups, cov_meta = cov_meta),
+      error = function(e) {
+        message("  [ERROR] Data prep failed for ", sp, ": ", conditionMessage(e))
+        return(NULL)
+      }
+    )
+    if (is.null(prepped)) next
 
-  cat("  Done — 16-covariate fit + diagnostics saved for", sp, "\n")
-}
+    fit_result <- tryCatch(
+      fit_one_16covariate_model(species = sp, species_f = sp_f, prepped = prepped,
+                                stan_model = model_16cov, firstYear = firstYear,
+                                lastYear = lastYear, cov_meta = cov_meta),
+      error = function(e) {
+        message("  [ERROR] 16-covariate model fit failed for ", sp, ": ", conditionMessage(e))
+        return(NULL)
+      }
+    )
+    if (is.null(fit_result)) next
 
-## ============================================================================
-## Combined pilot outputs
-## ============================================================================
-if (length(gamma_list) > 0) {
-  gamma_all <- bind_rows(gamma_list)
-  gamma_csv <- file.path(output_dir16, "pilot_16covariates_gamma_summary.csv")
-  write.csv(gamma_all, gamma_csv, row.names = FALSE)
-  cat("\nGamma summary (species x covariate) written to:", gamma_csv, "\n")
-  print(gamma_all)
-}
+    gamma_list[[sp]] <- fit_result$gamma_rows
+    diagnostics_list[[sp]] <- fit_result$diagnostics_row
 
-if (length(diagnostics_list) > 0) {
-  diagnostics_all <- bind_rows(diagnostics_list)
-  diag_csv <- file.path(output_dir16, "pilot_16covariates_diagnostics.csv")
-  write.csv(diagnostics_all, diag_csv, row.names = FALSE)
-  cat("\nPer-species diagnostics written to:", diag_csv, "\n")
-  print(diagnostics_all)
-}
+    cat("  Done —", bird_group, "16-covariate fit + diagnostics saved for", sp, "\n")
+  }
 
-## ============================================================================
-## Post-run checks
-## ============================================================================
-cat("\n############################################################\n")
-cat("# TEST CHECKS\n")
-cat("############################################################\n\n")
+  # --------------------------------------------------------------------------
+  # Combined pilot outputs for this bird group
+  # --------------------------------------------------------------------------
+  gamma_all <- NULL
 
-all_checks <- list()
+  if (length(gamma_list) > 0) {
+    gamma_all <- bind_rows(gamma_list)
+    gamma_csv <- file.path(output_dir16, paste0("pilot_16covariates_gamma_summary_", bird_group, ".csv"))
+    write.csv(gamma_all, gamma_csv, row.names = FALSE)
+    cat("\nGamma summary (species x covariate) written to:", gamma_csv, "\n")
+    print(gamma_all)
 
-for (sp in species_filter) {
-  sp_f <- species_to_f(sp)
-  checks <- list()
+    # Short/wide format: one row per species, one column per NLCD land-cover
+    # code (mean gamma only — sd/q5/q95/rhat/ess_bulk dropped), for a quick
+    # eyeball comparison across species/covariates. Column order follows
+    # cov_meta (ascending NLCD code).
+    gamma_short <- gamma_all %>%
+      select(species, code, mean) %>%
+      pivot_wider(names_from = code, values_from = mean) %>%
+      select(species, all_of(cov_meta$code))
+    gamma_short_csv <- file.path(output_dir16, paste0("pilot_16covariates_gamma_summary_short_", bird_group, ".csv"))
+    write.csv(gamma_short, gamma_short_csv, row.names = FALSE)
+    cat("\nGamma summary short (species x NLCD code, wide) written to:", gamma_short_csv, "\n")
+    print(gamma_short)
+  }
 
-  out_base  <- paste0(sp_f, "_iCAR_16covariates_", firstYear, "_", lastYear)
-  stanfit_f <- file.path(output_dir16, paste0(out_base, "_stanfit.rds"))
-  summ_f    <- file.path(output_dir16, paste0(out_base, "_summ_fit.rds"))
-  stan_data_f <- here::here("data", "stan_data",
-                            paste0(sp_f, "_16covariates_", firstYear, "_", lastYear, "_stan_data.RData"))
+  if (length(diagnostics_list) > 0) {
+    diagnostics_all <- bind_rows(diagnostics_list)
+    diag_csv <- file.path(output_dir16, paste0("pilot_16covariates_diagnostics_", bird_group, ".csv"))
+    write.csv(diagnostics_all, diag_csv, row.names = FALSE)
+    cat("\nPer-species diagnostics written to:", diag_csv, "\n")
+    print(diagnostics_all)
+  }
 
-  checks[["stanfit.rds exists"]]     <- file.exists(stanfit_f)
-  checks[["summ_fit.rds exists"]]    <- file.exists(summ_f)
-  checks[["stan_data.RData exists"]] <- file.exists(stan_data_f)
+  # --------------------------------------------------------------------------
+  # Post-run checks for this bird group
+  # --------------------------------------------------------------------------
+  cat("\n############################################################\n")
+  cat("# TEST CHECKS —", bird_group, "\n")
+  cat("############################################################\n\n")
 
-  if (exists("gamma_all")) {
-    sp_gamma <- gamma_all[gamma_all$species == sp, ]
-    checks[["gamma summary has all K covariates for this species"]] <-
-      nrow(sp_gamma) == K
-    checks[["gamma summary has non-NA mean for every covariate"]] <-
-      nrow(sp_gamma) > 0 && all(!is.na(sp_gamma$mean))
+  all_checks <- list()
+
+  for (sp in species_filter) {
+    sp_f <- species_to_f(sp)
+    checks <- list()
+
+    out_base  <- paste0(sp_f, "_iCAR_16covariates_", firstYear, "_", lastYear)
+    stanfit_f <- file.path(output_dir16, paste0(out_base, "_stanfit.rds"))
+    summ_f    <- file.path(output_dir16, paste0(out_base, "_summ_fit.rds"))
+    stan_data_f <- here::here("data", "stan_data",
+                              paste0(sp_f, "_16covariates_", firstYear, "_", lastYear, "_stan_data.RData"))
+
+    checks[["stanfit.rds exists"]]     <- file.exists(stanfit_f)
+    checks[["summ_fit.rds exists"]]    <- file.exists(summ_f)
+    checks[["stan_data.RData exists"]] <- file.exists(stan_data_f)
+
+    if (!is.null(gamma_all)) {
+      sp_gamma <- gamma_all[gamma_all$species == sp, ]
+      checks[["gamma summary has all K covariates for this species"]] <-
+        nrow(sp_gamma) == K
+      checks[["gamma summary has non-NA mean for every covariate"]] <-
+        nrow(sp_gamma) > 0 && all(!is.na(sp_gamma$mean))
+    } else {
+      checks[["gamma summary exists"]] <- FALSE
+    }
+
+    n_pass  <- sum(unlist(checks) == TRUE, na.rm = TRUE)
+    n_total <- length(checks)
+
+    cat("--- Results for", sp, "(", bird_group, ") ---\n")
+    for (nm in names(checks)) {
+      cat(sprintf("  [%s] %s\n", if (isTRUE(checks[[nm]])) "PASS" else "FAIL", nm))
+    }
+    cat(sprintf("  %d/%d checks passed for %s\n\n", n_pass, n_total, sp))
+
+    all_checks[[sp]] <- data.frame(bird_group = bird_group, species = sp,
+                                   n_pass = n_pass, n_total = n_total)
+  }
+
+  overall <- bind_rows(all_checks)
+  cat("############################################################\n")
+  cat("# GROUP SUMMARY —", bird_group, "\n")
+  cat("############################################################\n")
+  print(overall)
+
+  total_pass  <- sum(overall$n_pass)
+  total_check <- sum(overall$n_total)
+  cat("\n", total_pass, "/", total_check, " checks passed across ",
+      length(species_filter), " species in ", bird_group, "\n", sep = "")
+
+  if (all(overall$n_pass == overall$n_total)) {
+    cat("\nALL CHECKS PASSED for every species in", bird_group, ".\n")
   } else {
-    checks[["gamma summary exists"]] <- FALSE
+    failed_species <- overall$species[overall$n_pass != overall$n_total]
+    cat("\nSOME CHECKS FAILED for:", paste(failed_species, collapse = ", "),
+        "in", bird_group, "— see above.\n")
   }
 
-  n_pass  <- sum(unlist(checks) == TRUE, na.rm = TRUE)
-  n_total <- length(checks)
-
-  cat("--- Results for", sp, "---\n")
-  for (nm in names(checks)) {
-    cat(sprintf("  [%s] %s\n", if (isTRUE(checks[[nm]])) "PASS" else "FAIL", nm))
-  }
-  cat(sprintf("  %d/%d checks passed for %s\n\n", n_pass, n_total, sp))
-
-  all_checks[[sp]] <- data.frame(species = sp, n_pass = n_pass, n_total = n_total)
+  grand_all_checks[[bird_group]] <- overall
 }
 
-overall <- bind_rows(all_checks)
-cat("############################################################\n")
-cat("# OVERALL SUMMARY\n")
-cat("############################################################\n")
-print(overall)
+## ============================================================================
+## Grand summary across ALL bird groups
+## ============================================================================
+cat("\n\n################################################################\n")
+cat("# GRAND SUMMARY — ALL BIRD GROUPS\n")
+cat("################################################################\n")
 
-total_pass  <- sum(overall$n_pass)
-total_check <- sum(overall$n_total)
-cat("\n", total_pass, "/", total_check, " checks passed across ",
-    length(species_filter), " species\n", sep = "")
+if (length(grand_all_checks) > 0) {
+  grand_overall <- bind_rows(grand_all_checks)
+  print(grand_overall %>%
+          group_by(bird_group) %>%
+          summarise(n_species = n(),
+                    n_pass    = sum(n_pass),
+                    n_total   = sum(n_total),
+                    .groups = "drop"))
 
-if (all(overall$n_pass == overall$n_total)) {
-  cat("\nALL CHECKS PASSED for every species.\n")
+  grand_pass  <- sum(grand_overall$n_pass)
+  grand_check <- sum(grand_overall$n_total)
+  cat("\n", grand_pass, "/", grand_check, " checks passed across ",
+      length(unique(grand_overall$bird_group)), " bird groups and ",
+      nrow(grand_overall), " species total\n", sep = "")
+
+  if (all(grand_overall$n_pass == grand_overall$n_total)) {
+    cat("\nALL CHECKS PASSED across every group and species.\n")
+  } else {
+    failed <- grand_overall %>% filter(n_pass != n_total)
+    cat("\nSOME CHECKS FAILED for:\n")
+    print(failed %>% select(bird_group, species, n_pass, n_total))
+  }
 } else {
-  failed_species <- overall$species[overall$n_pass != overall$n_total]
-  cat("\nSOME CHECKS FAILED for:", paste(failed_species, collapse = ", "), "— see above.\n")
+  cat("No groups produced any results.\n")
 }
