@@ -18,10 +18,12 @@
 ## is intentionally not comparable to the covariate models, so it is not
 ## included in this combined file.
 ##
-## For all four models, reads the summary fit + stan_data saved by
-## 1c_species_iCAR_covariates.R:
+## For all four models, reads the summary fit + lightweight route lookup
+## saved by 1c_species_iCAR_covariates.R:
 ##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
-##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
+##   data/route_info/<species>_<tag>_<firstYear>_<lastYear>_route_info.rds
+##     (route, routeF, latitude, longitude only — NOT the full stan_data.RData,
+##     which also exists but isn't needed here)
 ## and derives the same per-route quantities as 2_generate_route_trend_csvs.R
 ## (trend, trend_lci, trend_uci, rel_abundance from beta/alpha).
 ##
@@ -42,6 +44,19 @@
 ## model-level file rather than being repeated down every route row. It is
 ## NA for the "base" model (no covariate).
 ##
+## ALSO writes ONE per-route CSV per species-per-model (same route_trends
+## data as above, just split apart instead of combined), so it can be fed to
+## 3c_add_SDM_covariates.R the same way 2_generate_route_trend_csvs.R's
+## per-species CSVs feed 3_add_SDM.R — that script requires exactly one
+## species_code per input file, which the single combined CSV above doesn't
+## satisfy:
+##   output/species_routes_covariates/per_species/<species>_<model_tag>_route_trends.csv
+##   columns: species, species_code, model, route, latitude, longitude,
+##            alpha, beta, trend, trend_lci, trend_uci, rel_abundance
+## (same columns as the combined per-route file, including "model", which
+## 3c_add_SDM_covariates.R/4c_statistical_analysis_and_visualization_covariates.R
+## just carry through unchanged since they have no model-specific logic.)
+##
 ## This is a post-processing / combination step only; it does not fit or
 ## re-derive anything beyond what 2_generate_route_trend_csvs.R and
 ## 1c_species_iCAR_covariates.R already produced.
@@ -59,9 +74,12 @@ lastYear   <- 2025
 model_tags <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
 
 output_dir       <- here::here("output")
-rds_dir          <- here::here("output", "rds")   # matches 1c_species_iCAR_covariates.R
+rds_dir          <- here::here("output", "rds")         # matches 1c_species_iCAR_covariates.R
+route_info_dir   <- here::here("data", "route_info")    # matches 1c_species_iCAR_covariates.R
 combined_out_dir <- here::here("output", "species_routes_covariates")
 if (!dir.exists(combined_out_dir)) dir.create(combined_out_dir, recursive = TRUE)
+per_species_out_dir <- here::here("output", "species_routes_covariates", "per_species")
+if (!dir.exists(per_species_out_dir)) dir.create(per_species_out_dir, recursive = TRUE)
 
 # Target group species list -------------------------------------------------
 spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
@@ -71,14 +89,6 @@ target_spp <- spp_df %>%
   filter(Group == land_cover, in_bbs == TRUE) %>%
   distinct(Common.Name, Code, .keep_all = TRUE) %>%
   arrange(Common.Name)
-
-# Optional external override — set `species_filter <- c("Some Species", ...)`
-# in the calling environment before sourcing this script to restrict the run
-# to just those species (used by tests/test_single_species.R).
-if (exists("species_filter")) {
-  target_spp <- target_spp %>% filter(Common.Name %in% species_filter)
-  cat("species_filter applied — running for:", paste(species_filter, collapse = ", "), "\n")
-}
 
 cat("=== Combine route-trend CSVs across all models ===\n")
 cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
@@ -111,18 +121,18 @@ for (i in seq_len(nrow(target_spp))) {
   # reduced dataset, so all four are read the same way here.
   for (tag in model_tags) {
 
-    out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-    summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
-    stan_data_file <- here::here("data", "stan_data",
-                                 paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
+    out_base        <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
+    summ_file       <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
+    route_info_file <- file.path(route_info_dir,
+                                 paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_route_info.rds"))
 
-    if (!file.exists(summ_file) || !file.exists(stan_data_file)) {
+    if (!file.exists(summ_file) || !file.exists(route_info_file)) {
       cat("  [", tag, "] No fitted output found — run 1c_species_iCAR_covariates.R first. Skipping.\n")
       next
     }
 
-    summ <- readRDS(summ_file)
-    load(stan_data_file)   # loads stan_data, new_data, model_tag
+    summ       <- readRDS(summ_file)
+    route_info <- readRDS(route_info_file)   # route, routeF, latitude, longitude
 
     # Extract beta (slope) per route -> raw value + annual % trend + 90% CI --
     beta_summ <- summ %>%
@@ -148,10 +158,9 @@ for (i in seq_len(nrow(target_spp))) {
       NA_real_
     }
 
-    # Route lat/lon straight from new_data (already WGS84, no reprojection
-    # needed since 1c builds it directly from raw_data$latitude/longitude)
-    route_info <- new_data %>%
-      distinct(route, routeF, latitude, longitude)
+    # route_info (route, routeF, latitude, longitude) already loaded above
+    # from route_info.rds (already WGS84, no reprojection needed since 1c
+    # builds it directly from raw_data$latitude/longitude).
 
     route_trends <- beta_summ %>%
       left_join(alpha_summ, by = "routeF") %>%
@@ -171,7 +180,17 @@ for (i in seq_len(nrow(target_spp))) {
       n_routes     = nrow(route_trends),
       gamma1       = gamma1_val
     )
-    cat("  [", tag, "] ", nrow(route_trends), "routes\n")
+
+    # Per-species-per-model CSV — same rows as route_trends above, just
+    # written individually (one species_code per file) instead of only into
+    # the combined all_route_rows list, so 3c_add_SDM_covariates.R can read
+    # them the same way 3_add_SDM.R reads 2_generate_route_trend_csvs.R's
+    # per-species files.
+    per_species_csv <- file.path(per_species_out_dir,
+                                 paste0(sp_f, "_", tag, "_route_trends.csv"))
+    write.csv(route_trends, per_species_csv, row.names = FALSE)
+
+    cat("  [", tag, "] ", nrow(route_trends), "routes -> ", basename(per_species_csv), "\n")
   }
 }
 
@@ -198,3 +217,6 @@ cat("Species x model combinations:", length(all_route_rows), "\n")
 print(table(all_route_trends$model))
 cat("Per-route CSV written to:", route_csv, "\n")
 cat("Model-level CSV written to:", model_csv, "\n")
+cat("Per-species-per-model CSVs written to:", per_species_out_dir,
+    "(", length(all_route_rows), "files )\n")
+cat("Next: run 3c_add_SDM_covariates.R to add climate-suitability columns.\n")

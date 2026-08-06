@@ -131,6 +131,14 @@ if (!dir.exists(rds_dir)) dir.create(rds_dir, recursive = TRUE)
 if (!dir.exists(here::here("data"))) dir.create(here::here("data"))
 if (!dir.exists(here::here("data", "maps"))) dir.create(here::here("data", "maps"), recursive = TRUE)
 if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", "stan_data"), recursive = TRUE)
+# Lightweight per-species/model_tag route lookup (route, routeF, latitude,
+# longitude only) — this is all 2c_generate_route_trend_csvs_covariates.R
+# actually needs from stan_data.RData's new_data, so it's saved separately
+# here as a small, fast alternative to loading the full stan_data.RData.
+# Kept per model_tag (not just per species) for now even though the reduced
+# dataset is currently shared across all four tags, in case that changes.
+route_info_dir <- here::here("data", "route_info")
+if (!dir.exists(route_info_dir)) dir.create(route_info_dir, recursive = TRUE)
 
 # Land-cover covariate lookups ---------------------------------------------
 # One row per route per year; build a "<StateNum>-<Route>" key to match
@@ -437,6 +445,19 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   out_base <- paste0(species_f, "_iCAR_", model_tag, "_", firstYear, "_", lastYear)
   stanfit$save_object(file.path(rds_dir, paste0(out_base, "_stanfit.rds")))
   saveRDS(summ, file.path(rds_dir, paste0(out_base, "_summ_fit.rds")))
+
+  # Lightweight route lookup (route, routeF, latitude, longitude) — saved on
+  # its own, before cleanup below, so 2c can get what it needs without
+  # depending on the full stan_data.RData save further down. Skip if a file
+  # of the same name already exists (identical across tags for this species,
+  # so no need to rewrite it every fit).
+  route_info_file <- file.path(route_info_dir,
+                               paste0(species_f, "_", model_tag, "_",
+                                      firstYear, "_", lastYear, "_route_info.rds"))
+  if (!file.exists(route_info_file)) {
+    route_info <- new_data %>% distinct(route, routeF, latitude, longitude)
+    saveRDS(route_info, route_info_file)
+  }
 
   # Raw per-chain CSVs are no longer needed once the fit is saved above —
   # delete them now instead of letting them accumulate in %TEMP%.
