@@ -37,12 +37,20 @@
 ##   2) Model-level file — one row per species/model (NOT per route), for
 ##      quantities that are constant across a species' routes:
 ##      output/species_routes_covariates/all_model_level_summary_<land_cover>_<firstYear>_<lastYear>.csv
-##      columns: species, species_code, model, n_routes, gamma1
+##      columns: species, species_code, model, n_routes, gamma1, gamma1_lci,
+##               gamma1_uci, gamma1_excludes_zero
 ##
 ## gamma1 is the covariate effect on log(lambda) — a single value per
 ## species+model, not per-route, which is why it lives in the separate
 ## model-level file rather than being repeated down every route row. It is
-## NA for the "base" model (no covariate).
+## NA (all four gamma1* columns) for the "base" model (no covariate).
+##
+## gamma1_lci/gamma1_uci are the 5th/95th posterior percentiles (q5/q95) of
+## gamma1 — i.e. a 90% credible interval, on the same log(lambda) scale as
+## gamma1 itself (no exp() transform, unlike trend_lci/trend_uci). This
+## mirrors how beta's 90% CI is pulled from summ's q5/q95 columns below.
+## gamma1_excludes_zero is TRUE when that 90% CI does not span zero (the
+## "credible effect" criterion described in the manuscript Methods).
 ##
 ## ALSO writes ONE per-route CSV per species-per-model (same route_trends
 ## data as above, just split apart instead of combined), so it can be fed to
@@ -105,7 +113,7 @@ route_cols <- c("species", "species_code", "model", "route",
                 "latitude", "longitude", "alpha", "beta",
                 "trend", "trend_lci", "trend_uci", "rel_abundance")
 model_cols <- c("species", "species_code", "model", "n_routes",
-                "gamma1")
+                "gamma1", "gamma1_lci", "gamma1_uci", "gamma1_excludes_zero")
 
 all_route_rows <- list()
 all_model_rows <- list()
@@ -151,11 +159,22 @@ for (i in seq_len(nrow(target_spp))) {
                 rel_abundance = exp(mean))
 
     # Species+model-level covariate effect, not per-route. "base" has no
-    # gamma1; each of the three covariate models has exactly one.
-    gamma1_val <- if ("gamma1" %in% summ$variable) {
-      summ$mean[summ$variable == "gamma1"]
+    # gamma1; each of the three covariate models has exactly one. Pull the
+    # 90% credible interval (q5/q95) alongside the mean, same way beta_summ
+    # does above, so downstream analyses can assess whether gamma1 is
+    # credibly different from zero instead of only seeing the point estimate.
+    if ("gamma1" %in% summ$variable) {
+      gamma1_row        <- summ[summ$variable == "gamma1", ]
+      gamma1_val        <- gamma1_row$mean[1]
+      gamma1_lci_val    <- gamma1_row$q5[1]
+      gamma1_uci_val    <- gamma1_row$q95[1]
+      gamma1_excludes_zero_val <- !is.na(gamma1_lci_val) && !is.na(gamma1_uci_val) &&
+        (gamma1_lci_val > 0 || gamma1_uci_val < 0)
     } else {
-      NA_real_
+      gamma1_val               <- NA_real_
+      gamma1_lci_val            <- NA_real_
+      gamma1_uci_val            <- NA_real_
+      gamma1_excludes_zero_val <- NA
     }
 
     # route_info (route, routeF, latitude, longitude) already loaded above
@@ -174,11 +193,14 @@ for (i in seq_len(nrow(target_spp))) {
     all_route_rows[[paste(sp, tag, sep = " | ")]] <- route_trends
 
     all_model_rows[[paste(sp, tag, sep = " | ")]] <- data.frame(
-      species      = sp,
-      species_code = sp_code,
-      model        = tag,
-      n_routes     = nrow(route_trends),
-      gamma1       = gamma1_val
+      species              = sp,
+      species_code         = sp_code,
+      model                = tag,
+      n_routes             = nrow(route_trends),
+      gamma1               = gamma1_val,
+      gamma1_lci           = gamma1_lci_val,
+      gamma1_uci           = gamma1_uci_val,
+      gamma1_excludes_zero = gamma1_excludes_zero_val
     )
 
     # Per-species-per-model CSV — same rows as route_trends above, just
@@ -219,4 +241,15 @@ cat("Per-route CSV written to:", route_csv, "\n")
 cat("Model-level CSV written to:", model_csv, "\n")
 cat("Per-species-per-model CSVs written to:", per_species_out_dir,
     "(", length(all_route_rows), "files )\n")
+
+# Quick check on the new gamma1 CI columns: how many species have a 90%
+# credible interval that excludes zero, per covariate model.
+cat("\nSpecies with gamma1's 90% CI excluding zero (credible effect), by model:\n")
+print(all_model_summary %>%
+        filter(model != "base") %>%
+        group_by(model) %>%
+        summarise(n_species          = n(),
+                  n_excludes_zero    = sum(gamma1_excludes_zero, na.rm = TRUE),
+                  .groups = "drop"))
+
 cat("Next: run 3c_add_SDM_covariates.R to add climate-suitability columns.\n")
