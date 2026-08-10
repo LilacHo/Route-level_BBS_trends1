@@ -583,3 +583,8 @@ if (length(diagnostics_list) > 0) {
 cat("\n=== Summary ===\n")
 cat("Species x model fits this run:", length(results_list), "\n")
 cat("Fits saved in:", output_dir, "\n")
+
+# gamma1 lookup table across every species x model_tag combo just fitted
+# above -- uses this script's own target_spp/model_tags/land_cover/etc.,
+# so it always matches whatever land_cover this run was actually for.
+source(here::here("helper", "gamma_lookup.R"))

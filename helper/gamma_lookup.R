@@ -15,15 +15,30 @@
 ## model in one table, e.g. to decide mean-vs-median reporting or to spot
 ## poorly-converged gamma1 estimates, without touching 2c's CSVs.
 ##
-## Usage:
-##   - source("helper/gamma_lookup.R") to get the gamma_lookup() function for
-##     use on a single species/model, e.g.:
-##       gamma_lookup("Bairds_Sparrow", "grassland_habitat")
-##   - Rscript helper/gamma_lookup.R (or source() from the console) also runs
-##     the batch section below, which reads every species x non-base model
-##     combination for `land_cover` and writes one combined table to
-##     output/files/gamma_lookup_<land_cover>_<firstYear>_<lastYear>.csv,
-##     plus prints a quick convergence/credibility summary to the console.
+## Nothing here is hardcoded to grasslands (or any particular land_cover/
+## model_tags) -- both gamma_lookup() and gamma_lookup_table() below take
+## every setting as an argument.
+##
+## Two ways to use this:
+##
+##   1. Insert into 1c_species_iCAR_covariates.R (or any script that already
+##      has target_spp/model_tags/firstYear/lastYear/rds_dir/land_cover in
+##      scope, which 1c does by the time its main loop finishes). Just add
+##      one line at the end of 1c:
+##        source(here::here("helper", "gamma_lookup.R"))
+##      Sourcing this file automatically calls gamma_lookup_table() using
+##      1c's OWN live target_spp/model_tags/land_cover/etc. -- no settings to
+##      edit, and it can never drift out of sync with whatever 1c was
+##      actually just run with (see the "Auto-run" block at the bottom).
+##
+##   2. Standalone: Rscript helper/gamma_lookup.R (or source() from the
+##      console with nothing pre-set) falls back to reading
+##      spp_names_codes_group_aou.csv itself with default settings
+##      (land_cover = "grasslands", the grasslands 4-tag model_tags), using
+##      the same `if (!exists(...))` override pattern already used elsewhere
+##      in this project (species_filter in 1c/2c, model_tag in 4c) -- set
+##      `land_cover <- "..."` / `model_tags <- c(...)` before sourcing to
+##      run it for a different group.
 ## =============================================================================
 
 library(dplyr)
@@ -31,14 +46,9 @@ library(here)
 
 here::i_am("helper/gamma_lookup.R")
 
-# Settings (match 1c_species_iCAR_covariates.R / 2c_generate_route_trend_csvs_covariates.R)
-land_cover <- "grasslands"
-firstYear  <- 2010
-lastYear   <- 2025
-model_tags <- c("grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
-# ("base" is intentionally excluded -- it has no gamma1.)
-
-rds_dir <- here::here("output", "rds")
+species_to_f <- function(sp) {
+  gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
+}
 
 #' Read one species/model's *_summ_fit.rds and pull out its gamma1 row
 #' verbatim (every column posterior::summarise_draws() produced), tagged
@@ -48,7 +58,7 @@ rds_dir <- here::here("output", "rds")
 #'
 #' @param species_f file-safe species name, e.g. "Bairds_Sparrow" (matches
 #'   the species_to_f() naming used by 1c/2c)
-#' @param tag covariate model tag, e.g. "grassland_habitat"
+#' @param tag covariate model tag, e.g. "grassland_habitat" or "wetlands"
 #' @param firstYear,lastYear must match the summ_fit.rds filename
 #' @param rds_dir directory containing the *_summ_fit.rds files
 #' @return a one-row data.frame (gamma1's full summary row + species_f/tag/
@@ -79,100 +89,149 @@ gamma_lookup <- function(species_f, tag, firstYear = 2010, lastYear = 2025,
   gamma_row %>% select(species_f, model, file, everything(), -variable)
 }
 
-## ==========================================================================
-## Batch mode: every species in `land_cover` x every tag in `model_tags`.
-## Runs automatically whenever this file is executed top-to-bottom
-## (Rscript helper/gamma_lookup.R, or source("helper/gamma_lookup.R")).
-## ==========================================================================
+#' Build the combined gamma1 table across every species x model_tag
+#' combination, write it to
+#' output/files/gamma_lookup_<land_cover>_<firstYear>_<lastYear>.csv, and
+#' print a quick convergence/credibility summary. Fully soft-coded: takes
+#' target_spp/model_tags/firstYear/lastYear/rds_dir/land_cover as arguments
+#' instead of hardcoding or re-deriving them, so it can be called directly
+#' with whatever a caller (e.g. 1c_species_iCAR_covariates.R) already built,
+#' for any land cover group / covariate-tag set.
+#'
+#' @param target_spp data.frame with at least Common.Name, Code columns (as
+#'   built by 1c_species_iCAR_covariates.R from
+#'   data/spp_names_codes_group_aou.csv)
+#' @param model_tags character vector of model tags to look up. "base" is
+#'   automatically dropped if present (it has no gamma1) -- pass 1c's own
+#'   model_tags as-is, no need to filter it yourself.
+#' @param firstYear,lastYear,rds_dir must match how the *_summ_fit.rds files
+#'   were named/saved
+#' @param land_cover used only to label the output CSV filename
+#' @param out_dir where to write the combined CSV (default output/files)
+#' @param write_csv if FALSE, skip writing the CSV (just return the table)
+#' @return the combined gamma_table (invisibly), or NULL if nothing found
+gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
+                               rds_dir, land_cover,
+                               out_dir = here::here("output", "files"),
+                               write_csv = TRUE) {
 
-species_to_f <- function(sp) {
-  gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
-}
+  model_tags_gamma <- setdiff(model_tags, "base")  # base has no gamma1
 
-spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
-                   stringsAsFactors = FALSE)
+  cat("=== gamma1 lookup ===\n")
+  cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
+  cat("Species (n =", nrow(target_spp), ") x models:", paste(model_tags_gamma, collapse = ", "), "\n\n")
 
-target_spp <- spp_df %>%
-  filter(Group == land_cover, in_bbs == TRUE) %>%
-  distinct(Common.Name, Code, .keep_all = TRUE) %>%
-  arrange(Common.Name)
+  rows <- list()
+  for (i in seq_len(nrow(target_spp))) {
+    sp      <- target_spp$Common.Name[i]
+    sp_f    <- species_to_f(sp)
+    sp_code <- target_spp$Code[i]
 
-cat("=== gamma1 lookup ===\n")
-cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
-cat("Species (n =", nrow(target_spp), ") x models:", paste(model_tags, collapse = ", "), "\n\n")
-
-rows <- list()
-for (i in seq_len(nrow(target_spp))) {
-  sp      <- target_spp$Common.Name[i]
-  sp_f    <- species_to_f(sp)
-  sp_code <- target_spp$Code[i]
-
-  for (tag in model_tags) {
-    r <- gamma_lookup(sp_f, tag, firstYear, lastYear, rds_dir)
-    if (!is.null(r)) {
-      r$species      <- sp
-      r$species_code <- sp_code
-      rows[[paste(sp, tag, sep = " | ")]] <- r
+    for (tag in model_tags_gamma) {
+      r <- gamma_lookup(sp_f, tag, firstYear, lastYear, rds_dir)
+      if (!is.null(r)) {
+        r$species      <- sp
+        r$species_code <- sp_code
+        rows[[paste(sp, tag, sep = " | ")]] <- r
+      }
     }
   }
+
+  if (length(rows) == 0) {
+    message("No gamma1 rows found -- check that ", rds_dir,
+            "/*_summ_fit.rds exist for these species/model_tags (run ",
+            "1c_species_iCAR_covariates.R first) and that land_cover/",
+            "model_tags match your setup.")
+    return(invisible(NULL))
+  }
+
+  gamma_table <- bind_rows(rows) %>%
+    select(species, species_code, model, everything(), -species_f, -file)
+
+  # Reorder columns so the diagnostics people usually eyeball first (mean,
+  # median, q5, q95, rhat, ess_bulk, ess_tail) come right after model, if
+  # present -- falls back gracefully if posterior::summarise_draws() used a
+  # different default measure set.
+  preferred_order <- c("species", "species_code", "model",
+                       "mean", "median", "sd", "mad", "q5", "q95",
+                       "rhat", "ess_bulk", "ess_tail")
+  gamma_table <- gamma_table %>%
+    select(any_of(preferred_order), everything())
+
+  cat("\n=== gamma1 table ===\n")
+  print(gamma_table, n = Inf, width = Inf)
+
+  cat("\n=== Quick summary ===\n")
+  if (all(c("mean", "median") %in% names(gamma_table))) {
+    cat("\nMean vs. median gamma1, per model (species-averaged, and largest |mean-median| gap):\n")
+    print(gamma_table %>%
+            mutate(mean_median_gap = abs(mean - median)) %>%
+            group_by(model) %>%
+            summarise(n              = n(),
+                      mean_of_means   = mean(mean, na.rm = TRUE),
+                      mean_of_medians = mean(median, na.rm = TRUE),
+                      max_gap         = max(mean_median_gap, na.rm = TRUE),
+                      .groups = "drop"))
+  }
+
+  if (all(c("q5", "q95") %in% names(gamma_table))) {
+    cat("\nSpecies with gamma1's 90% CI excluding zero (credible effect), by model:\n")
+    print(gamma_table %>%
+            mutate(excludes_zero = !is.na(q5) & !is.na(q95) & (q5 > 0 | q95 < 0)) %>%
+            group_by(model) %>%
+            summarise(n_species       = n(),
+                      n_excludes_zero = sum(excludes_zero, na.rm = TRUE),
+                      .groups = "drop"))
+  }
+
+  if ("rhat" %in% names(gamma_table)) {
+    cat("\nSpecies with gamma1 rhat > 1.01 (possible convergence concern), by model:\n")
+    print(gamma_table %>%
+            filter(rhat > 1.01) %>%
+            select(species, species_code, model, rhat, any_of(c("ess_bulk", "ess_tail"))))
+  }
+
+  if (write_csv) {
+    if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+    out_csv <- file.path(out_dir, paste0("gamma_lookup_", land_cover, "_",
+                                         firstYear, "_", lastYear, ".csv"))
+    write.csv(gamma_table, out_csv, row.names = FALSE)
+    cat("\nFull table written to:", out_csv, "\n")
+  }
+
+  invisible(gamma_table)
 }
 
-if (length(rows) == 0) {
-  stop("No gamma1 rows found -- check that output/rds/*_summ_fit.rds exist ",
-       "(run 1c_species_iCAR_covariates.R first) and that land_cover/model_tags ",
-       "above match your setup.")
+## ==========================================================================
+## Auto-run: call gamma_lookup_table() using whatever target_spp/model_tags/
+## firstYear/lastYear/rds_dir/land_cover ALREADY EXIST in the calling
+## environment (e.g. 1c_species_iCAR_covariates.R's, if this file is
+## source()'d from the end of a 1c run) -- filling in grasslands defaults
+## via `if (!exists(...))` for any not already set, so this also still works
+## standalone (Rscript helper/gamma_lookup.R) exactly as before.
+## Set `gamma_lookup_skip_autorun <- TRUE` before sourcing to load just the
+## two functions above without running anything.
+## ==========================================================================
+if (!exists("gamma_lookup_skip_autorun") || !isTRUE(gamma_lookup_skip_autorun)) {
+
+  if (!exists("land_cover")) land_cover <- "grasslands"
+  if (!exists("firstYear"))  firstYear  <- 2010
+  if (!exists("lastYear"))   lastYear   <- 2025
+  if (!exists("model_tags")) model_tags <- c("base", "grassland_habitat",
+                                             "grassland_anthro",
+                                             "grassland_habitat_to_anthro")
+  if (!exists("rds_dir"))    rds_dir    <- here::here("output", "rds")
+
+  if (!exists("target_spp")) {
+    spp_df_gl <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
+                          stringsAsFactors = FALSE)
+    target_spp <- spp_df_gl %>%
+      filter(Group == land_cover, in_bbs == TRUE) %>%
+      distinct(Common.Name, Code, .keep_all = TRUE) %>%
+      arrange(Common.Name)
+  }
+
+  gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
+                     firstYear = firstYear, lastYear = lastYear,
+                     rds_dir = rds_dir, land_cover = land_cover)
 }
-
-gamma_table <- bind_rows(rows) %>%
-  select(species, species_code, model, everything(), -species_f, -file)
-
-# Reorder columns so the diagnostics people usually eyeball first (mean,
-# median, q5, q95, rhat, ess_bulk, ess_tail) come right after model, if
-# present -- falls back gracefully if posterior::summarise_draws() used a
-# different default measure set.
-preferred_order <- c("species", "species_code", "model",
-                     "mean", "median", "sd", "mad", "q5", "q95",
-                     "rhat", "ess_bulk", "ess_tail")
-gamma_table <- gamma_table %>%
-  select(any_of(preferred_order), everything())
-
-out_dir <- here::here("output", "files")
-if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-out_csv <- file.path(out_dir, paste0("gamma_lookup_", land_cover, "_",
-                                     firstYear, "_", lastYear, ".csv"))
-write.csv(gamma_table, out_csv, row.names = FALSE)
-
-cat("\n=== gamma1 table ===\n")
-print(gamma_table, n = Inf, width = Inf)
-
-cat("\n=== Quick summary ===\n")
-if (all(c("mean", "median") %in% names(gamma_table))) {
-  cat("\nMean vs. median gamma1, per model (species-averaged, and largest |mean-median| gap):\n")
-  print(gamma_table %>%
-          mutate(mean_median_gap = abs(mean - median)) %>%
-          group_by(model) %>%
-          summarise(n              = n(),
-                    mean_of_means   = mean(mean, na.rm = TRUE),
-                    mean_of_medians = mean(median, na.rm = TRUE),
-                    max_gap         = max(mean_median_gap, na.rm = TRUE),
-                    .groups = "drop"))
-}
-
-if (all(c("q5", "q95") %in% names(gamma_table))) {
-  cat("\nSpecies with gamma1's 90% CI excluding zero (credible effect), by model:\n")
-  print(gamma_table %>%
-          mutate(excludes_zero = !is.na(q5) & !is.na(q95) & (q5 > 0 | q95 < 0)) %>%
-          group_by(model) %>%
-          summarise(n_species       = n(),
-                    n_excludes_zero = sum(excludes_zero, na.rm = TRUE),
-                    .groups = "drop"))
-}
-
-if ("rhat" %in% names(gamma_table)) {
-  cat("\nSpecies with gamma1 rhat > 1.01 (possible convergence concern), by model:\n")
-  print(gamma_table %>%
-          filter(rhat > 1.01) %>%
-          select(species, species_code, model, rhat, any_of(c("ess_bulk", "ess_tail"))))
-}
-
-cat("\nFull table written to:", out_csv, "\n")
