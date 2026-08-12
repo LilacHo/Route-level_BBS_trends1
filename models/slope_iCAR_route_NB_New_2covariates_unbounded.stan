@@ -1,8 +1,20 @@
-// iCAR route-level slope model + land-cover covariates
-// Extends slope_iCAR_route_NB_New.stan by adding two route-year land-cover
-// covariates (proportions, range [0,1]) to the log-linear predictor:
+// iCAR route-level slope model + two UNBOUNDED covariates
 //
-//   log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Grassland[r,t] + gamma2*Anthro[r,t]
+// Same as slope_iCAR_route_NB_New_2covariates.stan, except the two covariate
+// columns are declared as plain `real` (no [0,1] bound) instead of raw
+// land-cover proportions. This variant exists specifically so covariate
+// TRANSFORMATIONS that can go outside [0,1] — standardized (z-scored)
+// values, or route-mean-centered "within-route deviation" values, both of
+// which can be negative — can be passed in without a data bounds error.
+//
+//   log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*covariate1[r,t] + gamma2*covariate2[r,t]
+//
+// covariate1/covariate2 are generic on purpose: pass raw proportions,
+// standardized values, or a within/between decomposition of a single
+// covariate (covariate1 = route-mean "between" component, covariate2 =
+// route-year "within" deviation). To test only ONE covariate, pass a
+// constant column of zeros for the other — gamma on an all-zero covariate
+// contributes nothing to the likelihood, so it's a safe no-op.
 //
 // All other structure (iCAR spatial priors on alpha/beta, observer effects,
 // first-year effect, NB2 overdispersion) is unchanged from
@@ -23,10 +35,11 @@ data {
   array [ncounts] int<lower=0> firstyr; // first year index
   array [ncounts] int<lower=1> observer;              // observer indicators
 
-  // Route-year land-cover covariates, proportion of route in each cover type
-  // (range [0,1]), aligned 1:1 with count/year/route/etc. above.
-  array [ncounts] real<lower=0, upper=1> grassland; // proportion grassland cover
-  array [ncounts] real<lower=0, upper=1> anthro; // proportion anthropogenic land cover
+  // Route-year covariates, UNBOUNDED (can be standardized or
+  // route-mean-centered, so can be negative), aligned 1:1 with
+  // count/year/route/etc. above.
+  array [ncounts] real covariate1;
+  array [ncounts] real covariate2;
 
   int<lower=1> fixedyear; // centering value for years
 
@@ -54,8 +67,8 @@ parameters {
 
   sum_to_zero_vector[nobservers] obs_raw; //observer effects improved sum to zero constraint
 
-  real gamma1; // effect of grassland-cover proportion on log(lambda)
-  real gamma2; // effect of anthropogenic-cover proportion on log(lambda)
+  real gamma1; // effect of covariate1 on log(lambda)
+  real gamma2; // effect of covariate2 on log(lambda)
 
   real<lower=0> sdnoise;    // inverse of sd of over-dispersion
  //real<lower=1> nu;  //optional heavy-tail df for t-distribution
@@ -90,7 +103,7 @@ model {
 
   for(i in 1:ncounts){
     E[i] =  beta[route[i]] * (year[i]-fixedyear) + alpha[route[i]] + obs[observer[i]] + eta*firstyr[i]
-            + gamma1*grassland[i] + gamma2*anthro[i];
+            + gamma1*covariate1[i] + gamma2*covariate2[i];
   }
 
 
@@ -113,8 +126,8 @@ model {
   ALPHA ~ std_normal();// prior on fixed effect mean intercept
   eta ~ std_normal();// prior on first-year observer effect
 
-  gamma1 ~ normal(0,1);// prior on grassland-cover effect
-  gamma2 ~ normal(0,1);// prior on anthropogenic-cover effect
+  gamma1 ~ normal(0,1);// prior on covariate1 effect
+  gamma2 ~ normal(0,1);// prior on covariate2 effect
 
 
   //spatial iCAR intercepts and slopes by strata
@@ -151,7 +164,7 @@ model {
 
 // covariate effects, passed through so they're grouped with the other
 // derived/reported quantities in the output summary
-   gamma1_out = gamma1; // grassland-cover effect on log(lambda)
-   gamma2_out = gamma2; // anthropogenic-cover effect on log(lambda)
+   gamma1_out = gamma1;
+   gamma2_out = gamma2;
 
  }

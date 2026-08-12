@@ -1,12 +1,18 @@
-// iCAR route-level slope model + land-cover covariates
-// Extends slope_iCAR_route_NB_New.stan by adding two route-year land-cover
-// covariates (proportions, range [0,1]) to the log-linear predictor:
+// iCAR route-level slope model + 16 simultaneous land-cover covariates
+// Extends slope_iCAR_route_NB_New_2covariates.stan from 2 to K (=16) route-year
+// land-cover covariates (proportions, range [0,1]) in the log-linear predictor:
 //
-//   log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Grassland[r,t] + gamma2*Anthro[r,t]
+//   log(lambda[r,t]) = alpha[r] + beta[r]*t + sum_k gamma[k]*X[r,t,k]
 //
+// Covariates are passed as a single ncounts-by-K matrix (one row per
+// observation, i.e. per route-year-count row, one column per covariate)
+// rather than as 16 separate arrays, so the model generalizes to any K
+// without editing this file. A plain `matrix[N, K]` data type is used
+// (rather than `array[N] vector[K]`) because it is the standard, best-
+// tested way to pass a full covariate design matrix from R via cmdstanr.
 // All other structure (iCAR spatial priors on alpha/beta, observer effects,
 // first-year effect, NB2 overdispersion) is unchanged from
-// slope_iCAR_route_NB_New.stan.
+// slope_iCAR_route_NB_New_2covariates.stan.
 
 
 data {
@@ -14,6 +20,7 @@ data {
   int<lower=1> ncounts;
   int<lower=1> nyears;
   int<lower=0> nobservers;
+  int<lower=1> K; // number of simultaneous land-cover covariates (16 for the pilot)
 
   real<lower=0> sd_alpha_prior;
 
@@ -23,10 +30,11 @@ data {
   array [ncounts] int<lower=0> firstyr; // first year index
   array [ncounts] int<lower=1> observer;              // observer indicators
 
-  // Route-year land-cover covariates, proportion of route in each cover type
-  // (range [0,1]), aligned 1:1 with count/year/route/etc. above.
-  array [ncounts] real<lower=0, upper=1> grassland; // proportion grassland cover
-  array [ncounts] real<lower=0, upper=1> anthro; // proportion anthropogenic land cover
+  // Route-year land-cover covariates, proportion of route in each of the K
+  // cover types (range [0,1]); row i of X holds the K covariate values for
+  // observation i, aligned 1:1 with count/year/route/etc. above (columns in
+  // the same order as gamma/gamma_out below).
+  matrix<lower=0, upper=1>[ncounts, K] X;
 
   int<lower=1> fixedyear; // centering value for years
 
@@ -54,8 +62,7 @@ parameters {
 
   sum_to_zero_vector[nobservers] obs_raw; //observer effects improved sum to zero constraint
 
-  real gamma1; // effect of grassland-cover proportion on log(lambda)
-  real gamma2; // effect of anthropogenic-cover proportion on log(lambda)
+  vector[K] gamma; // effects of each of the K land-cover covariates on log(lambda)
 
   real<lower=0> sdnoise;    // inverse of sd of over-dispersion
  //real<lower=1> nu;  //optional heavy-tail df for t-distribution
@@ -90,7 +97,7 @@ model {
 
   for(i in 1:ncounts){
     E[i] =  beta[route[i]] * (year[i]-fixedyear) + alpha[route[i]] + obs[observer[i]] + eta*firstyr[i]
-            + gamma1*grassland[i] + gamma2*anthro[i];
+            + dot_product(gamma, to_vector(X[i]));
   }
 
 
@@ -113,8 +120,7 @@ model {
   ALPHA ~ std_normal();// prior on fixed effect mean intercept
   eta ~ std_normal();// prior on first-year observer effect
 
-  gamma1 ~ normal(0,1);// prior on grassland-cover effect
-  gamma2 ~ normal(0,1);// prior on anthropogenic-cover effect
+  gamma ~ std_normal();// prior on each land-cover covariate effect (independent N(0,1))
 
 
   //spatial iCAR intercepts and slopes by strata
@@ -139,8 +145,7 @@ model {
   vector[nroutes] beta_space;
   vector[nroutes] beta;
   vector[nroutes] alpha;
-  real gamma1_out;
-  real gamma2_out;
+  vector[K] gamma_out;
 
 // intercepts and slopes
    beta_space = (sdbeta_space*beta_raw_space);
@@ -151,7 +156,6 @@ model {
 
 // covariate effects, passed through so they're grouped with the other
 // derived/reported quantities in the output summary
-   gamma1_out = gamma1; // grassland-cover effect on log(lambda)
-   gamma2_out = gamma2; // anthropogenic-cover effect on log(lambda)
+   gamma_out = gamma; // K land-cover covariate effects on log(lambda), same order as X columns
 
  }
