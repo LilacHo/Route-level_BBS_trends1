@@ -15,29 +15,29 @@
 ## model in one table, e.g. to decide mean-vs-median reporting or to spot
 ## poorly-converged gamma1 estimates, without touching 2c's CSVs.
 ##
-## Nothing here is hardcoded to grasslands (or any particular land_cover/
+## Nothing here is hardcoded to grasslands (or any particular bird_group/
 ## model_tags) -- both gamma_lookup() and gamma_lookup_table() below take
 ## every setting as an argument.
 ##
 ## Two ways to use this:
 ##
 ##   1. Insert into 1c_species_iCAR_covariates.R (or any script that already
-##      has target_spp/model_tags/firstYear/lastYear/rds_dir/land_cover in
+##      has target_spp/model_tags/firstYear/lastYear/rds_dir/bird_group in
 ##      scope, which 1c does by the time its main loop finishes). Just add
 ##      one line at the end of 1c:
 ##        source(here::here("helper", "gamma_lookup.R"))
 ##      Sourcing this file automatically calls gamma_lookup_table() using
-##      1c's OWN live target_spp/model_tags/land_cover/etc. -- no settings to
+##      1c's OWN live target_spp/model_tags/bird_group/etc. -- no settings to
 ##      edit, and it can never drift out of sync with whatever 1c was
 ##      actually just run with (see the "Auto-run" block at the bottom).
 ##
 ##   2. Standalone: Rscript helper/gamma_lookup.R (or source() from the
 ##      console with nothing pre-set) falls back to reading
 ##      spp_names_codes_group_aou.csv itself with default settings
-##      (land_cover = "grasslands", the grasslands 4-tag model_tags), using
+##      (bird_group = "grasslands", the grasslands 4-tag model_tags), using
 ##      the same `if (!exists(...))` override pattern already used elsewhere
 ##      in this project (species_filter in 1c/2c, model_tag in 4c) -- set
-##      `land_cover <- "..."` / `model_tags <- c(...)` before sourcing to
+##      `bird_group <- "..."` / `model_tags <- c(...)` before sourcing to
 ##      run it for a different group.
 ## =============================================================================
 
@@ -91,9 +91,9 @@ gamma_lookup <- function(species_f, tag, firstYear = 2010, lastYear = 2025,
 
 #' Build the combined gamma1 table across every species x model_tag
 #' combination, write it to
-#' output/files/gamma_lookup_<land_cover>_<firstYear>_<lastYear>.csv, and
+#' output/files/gamma_lookup_<bird_group>_<firstYear>_<lastYear>.csv, and
 #' print a quick convergence/credibility summary. Fully soft-coded: takes
-#' target_spp/model_tags/firstYear/lastYear/rds_dir/land_cover as arguments
+#' target_spp/model_tags/firstYear/lastYear/rds_dir/bird_group as arguments
 #' instead of hardcoding or re-deriving them, so it can be called directly
 #' with whatever a caller (e.g. 1c_species_iCAR_covariates.R) already built,
 #' for any land cover group / covariate-tag set.
@@ -106,19 +106,19 @@ gamma_lookup <- function(species_f, tag, firstYear = 2010, lastYear = 2025,
 #'   model_tags as-is, no need to filter it yourself.
 #' @param firstYear,lastYear,rds_dir must match how the *_summ_fit.rds files
 #'   were named/saved
-#' @param land_cover used only to label the output CSV filename
+#' @param bird_group used only to label the output CSV filename
 #' @param out_dir where to write the combined CSV (default output/files)
 #' @param write_csv if FALSE, skip writing the CSV (just return the table)
 #' @return the combined gamma_table (invisibly), or NULL if nothing found
 gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
-                               rds_dir, land_cover,
+                               rds_dir, bird_group,
                                out_dir = here::here("output", "files"),
                                write_csv = TRUE) {
 
   model_tags_gamma <- setdiff(model_tags, "base")  # base has no gamma1
 
   cat("=== gamma1 lookup ===\n")
-  cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
+  cat("Group:", bird_group, " | Period:", firstYear, "-", lastYear, "\n")
   cat("Species (n =", nrow(target_spp), ") x models:", paste(model_tags_gamma, collapse = ", "), "\n\n")
 
   rows <- list()
@@ -140,7 +140,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
   if (length(rows) == 0) {
     message("No gamma1 rows found -- check that ", rds_dir,
             "/*_summ_fit.rds exist for these species/model_tags (run ",
-            "1c_species_iCAR_covariates.R first) and that land_cover/",
+            "1c_species_iCAR_covariates.R first) and that bird_group/",
             "model_tags match your setup.")
     return(invisible(NULL))
   }
@@ -193,7 +193,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
 
   if (write_csv) {
     if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-    out_csv <- file.path(out_dir, paste0("gamma_lookup_", land_cover, "_",
+    out_csv <- file.path(out_dir, paste0("gamma_lookup_", bird_group, "_",
                                          firstYear, "_", lastYear, ".csv"))
     write.csv(gamma_table, out_csv, row.names = FALSE)
     cat("\nFull table written to:", out_csv, "\n")
@@ -204,7 +204,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
 
 ## ==========================================================================
 ## Auto-run: call gamma_lookup_table() using whatever target_spp/model_tags/
-## firstYear/lastYear/rds_dir/land_cover ALREADY EXIST in the calling
+## firstYear/lastYear/rds_dir/bird_group ALREADY EXIST in the calling
 ## environment (e.g. 1c_species_iCAR_covariates.R's, if this file is
 ## source()'d from the end of a 1c run) -- filling in grasslands defaults
 ## via `if (!exists(...))` for any not already set, so this also still works
@@ -214,7 +214,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
 ## ==========================================================================
 if (!exists("gamma_lookup_skip_autorun") || !isTRUE(gamma_lookup_skip_autorun)) {
 
-  if (!exists("land_cover")) land_cover <- "grasslands"
+  if (!exists("bird_group")) bird_group <- "grasslands"
   if (!exists("firstYear"))  firstYear  <- 2010
   if (!exists("lastYear"))   lastYear   <- 2025
   if (!exists("model_tags")) model_tags <- c("base", "grassland_habitat",
@@ -226,12 +226,12 @@ if (!exists("gamma_lookup_skip_autorun") || !isTRUE(gamma_lookup_skip_autorun)) 
     spp_df_gl <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                           stringsAsFactors = FALSE)
     target_spp <- spp_df_gl %>%
-      filter(Group == land_cover, in_bbs == TRUE) %>%
+      filter(Group == bird_group, in_bbs == TRUE) %>%
       distinct(Common.Name, Code, .keep_all = TRUE) %>%
       arrange(Common.Name)
   }
 
   gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
                      firstYear = firstYear, lastYear = lastYear,
-                     rds_dir = rds_dir, land_cover = land_cover)
+                     rds_dir = rds_dir, bird_group = bird_group)
 }

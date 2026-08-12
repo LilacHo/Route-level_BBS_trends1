@@ -18,15 +18,23 @@
 # written by 2c_generate_route_trend_csvs_covariates.R's per-species-per-model
 # CSVs and carried through 3c_add_SDM_covariates.R).
 #
-# Every input file has a "model" column (base / grassland_habitat /
-# grassland_anthro / grassland_habitat_to_anthro), since 3c's input files are
-# per-species-PER-MODEL. This script analyzes exactly ONE model_tag per run
-# (set below) — all rows for every other model are filtered out immediately
-# after reading, before any test or plot is built, so nothing gets pooled
-# across models. To compare models, rerun this script once per model_tag
-# (edit the setting, or set `model_tag <- "..."` before sourcing this file)
-# — every stats/plot output filename below includes model_tag, so separate
-# runs don't overwrite each other's output.
+# Every input file has a "model" column (base / anthro), since 3c's input
+# files are per-species-PER-MODEL. This script analyzes exactly ONE
+# model_tag per run (set below) — all rows for every other model are
+# filtered out immediately after reading, before any test or plot is built,
+# so nothing gets pooled across models. To compare models, rerun this
+# script once per model_tag (edit the setting, or set `model_tag <- "..."`
+# before sourcing this file) — every stats/plot output filename below
+# includes model_tag, so separate runs don't overwrite each other's output.
+#
+# Since 1c_species_iCAR_covariates.R / 2c now fit and combine EVERY species
+# across all 12 groups in one run (not one bird_group at a time), each
+# input file also carries a "group" column (written directly by 2c). Set
+# bird_group below to one real group (e.g. "aridlands") to reproduce the
+# original per-group Parts 1-4 breakdown, or set it to NA to skip the
+# group filter and pool every species/group together (PART 5 below, which
+# used to be an optional add-on, is now effectively the default view given
+# 1c's all-species scope, and runs automatically when bird_group is NA).
 
 library(here)
 library(tidyverse)
@@ -35,15 +43,13 @@ library(multcompView) # multcompView converts pairwise p-values into compact let
 here::i_am("4c_statistical_analysis_and_visualization_covariates.R")
 
 # Settings -----------------------------------------------------------------
-land_cover <- "grasslands"   # target group: species are matched to this group
-                             # via data/spp_names_codes_group_aou.csv (the
-                             # per-species CSVs from 3c_add_SDM_covariates.R
-                             # are named by species (+ model), not by
-                             # land_cover, so filtering by group requires
-                             # this lookup rather than a filename prefix)
+bird_group <- NA   # one of the 12 Group values in
+                   # data/spp_names_codes_group_aou.csv (e.g. "aridlands",
+                   # "boreal_forests", ...) to restrict Parts 1-4 to that
+                   # group, or NA to skip Parts 1-4 entirely and only run
+                   # Part 5 (all groups pooled) -- see note above.
 
-model_tag <- "base" # Change as needed
-# (base / grassland_habitat / grassland_anthro / grassland_habitat_to_anthro)
+model_tag <- "base" # Change as needed ("base" or "anthro")
 
 out_dir   <- here::here("output", "species_routes_covariates", "per_species_sdm")
 stats_dir <- here::here("output", "species_routes_covariates", "per_species_sdm_stats")
@@ -53,14 +59,10 @@ if (!dir.exists(stats_dir))       dir.create(stats_dir,       recursive = TRUE)
 if (!dir.exists(plot_dir))        dir.create(plot_dir,        recursive = TRUE)
 if (!dir.exists(per_species_dir)) dir.create(per_species_dir, recursive = TRUE)
 
-# Species lookup table (Code -> Group), used to resolve each species CSV's
-# land-cover group since the file name itself carries no land_cover prefix.
-spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv")) %>%
-  distinct(Code, Group)
-
-# Read every SDM CSV written by 3c_add_SDM_covariates.R, then attach each
-# row's land-cover group via species_code so it can be filtered per
-# land_cover below.
+# Read every SDM CSV written by 3c_add_SDM_covariates.R. Each row already
+# carries its own "group" column (written directly by
+# 2c_generate_route_trend_csvs_covariates.R and passed through unchanged by
+# 3c), so no separate species lookup/join is needed here.
 sdm_files <- list.files(out_dir, pattern = "_route_trends_sdm\\.csv$",
                         full.names = TRUE)
 
@@ -70,14 +72,17 @@ if (length(sdm_files) == 0) {
 
 cat("\nCombining all species SDM files...\n")
 
-all_sdm_raw_unfiltered <- sdm_files %>%
-  map_dfr(read.csv) %>%
-  left_join(spp_df, by = c("species_code" = "Code"))
+all_sdm_raw_unfiltered <- sdm_files %>% map_dfr(read.csv)
 
 if (!"model" %in% names(all_sdm_raw_unfiltered)) {
   stop("No 'model' column found in the SDM CSVs in ", out_dir, " — expected ",
        "one per-species-per-model file per 2c_generate_route_trend_csvs_covariates.R's ",
        "output. Re-run 2c/3c if these files predate that per-model split.")
+}
+if (!"group" %in% names(all_sdm_raw_unfiltered)) {
+  stop("No 'group' column found in the SDM CSVs in ", out_dir, " — these files ",
+       "predate 2c writing 'group' directly; re-run 2c_generate_route_trend_csvs_covariates.R ",
+       "and 3c_add_SDM_covariates.R to regenerate them.")
 }
 
 models_available <- sort(unique(all_sdm_raw_unfiltered$model))
@@ -88,22 +93,36 @@ if (!model_tag %in% models_available) {
 }
 
 # Restrict to exactly one model BEFORE any downstream filtering/analysis, so
-# every stats/plot output below (including PART 5's all-land-cover section)
-# reflects this one model only — nothing gets pooled across models.
+# every stats/plot output below reflects this one model only — nothing gets
+# pooled across models.
 all_sdm_raw <- all_sdm_raw_unfiltered %>% filter(model == model_tag)
 
 cat("model_tag:", model_tag, "(", nrow(all_sdm_raw), "of", nrow(all_sdm_raw_unfiltered),
     "rows across all models present in", out_dir, ")\n")
 
-target_sdm <- all_sdm_raw %>% filter(Group == land_cover)
+# bird_group == NA means "pool every group" (see settings comment above);
+# otherwise restrict to that one group, same as before. run_label is used
+# everywhere below that used to use bird_group directly for file/title
+# text, so filenames never end up with a literal "NA" in them.
+if (is.na(bird_group)) {
+  target_sdm <- all_sdm_raw
+  run_label  <- "all_groups"
+  cat("bird_group = NA -> pooling all groups\n")
+} else {
+  target_sdm <- all_sdm_raw %>% filter(group == bird_group)
+  run_label  <- bird_group
+}
 
 if (nrow(target_sdm) == 0) {
-  stop("No SDM rows matched land_cover = '", land_cover, "' and model_tag = '",
-       model_tag, "' after joining species groups from spp_names_codes_group_aou.csv")
+  stop("No SDM rows matched bird_group = '", bird_group, "' and model_tag = '",
+       model_tag, "'. Groups present: ", paste(sort(unique(all_sdm_raw$group)), collapse = ", "))
 }
 
 cat("Total rows:", nrow(target_sdm), "\n")
-cat(land_cover, "species:", length(unique(target_sdm$species_code)), "\n")
+cat(run_label, "species:", length(unique(target_sdm$species_code)), "\n")
+if (is.na(bird_group)) {
+  cat("Groups pooled:", paste(sort(unique(target_sdm$group)), collapse = ", "), "\n")
+}
 
 # Build combined analysis data ---------------------------------------------
 analysis_45 <- target_sdm %>%
@@ -322,7 +341,7 @@ make_violin_cld <- function(df45, df85, group, group_levels,
 # PART 1: All 8 SDM categories (0-7) — all species ####
 # ==========================================================================
 
-stats_file_8cat <- file.path(stats_dir, paste0(land_cover, "_", model_tag, "_category_stats_8categories.txt"))
+stats_file_8cat <- file.path(stats_dir, paste0(run_label, "_", model_tag, "_category_stats_8categories.txt"))
 sink(stats_file_8cat)
 
 cat("\n##################################################\n")
@@ -340,12 +359,12 @@ cat("Saved Part 1 (all-species 8-category) statistics to:", stats_file_8cat, "\n
 make_violin_cld(
   analysis_45, analysis_85,
   group = "category", group_levels = cat8_levels,
-  title = paste0("All ", land_cover, " species combined (", model_tag, ")"),
+  title = paste0("All ", run_label, " species combined (", model_tag, ")"),
   subtitle = paste0(nrow(target_sdm), " route-species observations across ",
                     length(unique(target_sdm$route)), " unique routes and ",
                     length(unique(target_sdm$species_code)), " species"),
   x_lab = "SDM classified change category",
-  file_name = paste0(land_cover, "_", model_tag, "_ALL_species_trend_by_rcp_cld.png")
+  file_name = paste0(run_label, "_", model_tag, "_ALL_species_trend_by_rcp_cld.png")
 )
 
 
@@ -354,7 +373,7 @@ make_violin_cld(
 # ==========================================================================
 
 stats_file_species_8cat <- file.path(stats_dir,
-                                      paste0(land_cover, "_", model_tag, "_category_stats_by_species_8categories.txt"))
+                                      paste0(run_label, "_", model_tag, "_category_stats_by_species_8categories.txt"))
 sink(stats_file_species_8cat)
 
 cat("\n##################################################\n")
@@ -388,17 +407,18 @@ cat("Saved Part 2 (per-species 8-category) statistics to:",
 
 for (sp in target_species_list) {
   sp_name <- unique(target_sdm$species[target_sdm$species_code == sp])
+  sp_grp  <- unique(target_sdm$group[target_sdm$species_code == sp])[1]
   sp_45 <- analysis_45 %>% filter(species_code == sp)
   sp_85 <- analysis_85 %>% filter(species_code == sp)
 
   make_violin_cld(
     sp_45, sp_85,
     group = "category", group_levels = cat8_levels,
-    title = paste0(sp_name, " (", sp, ") (group:", land_cover, ", model:", model_tag, ")"),
+    title = paste0(sp_name, " (", sp, ") (group:", sp_grp, ", model:", model_tag, ")"),
     subtitle = paste0("n = ", nrow(sp_45), " (RCP4.5), ",
                       nrow(sp_85), " (RCP8.5) route observations"),
     x_lab = "SDM classified change category",
-    file_name = paste0(land_cover, "_", model_tag, "_", sp, "_trend_by_rcp_cld.png"),
+    file_name = paste0(run_label, "_", model_tag, "_", sp, "_trend_by_rcp_cld.png"),
     dir = per_species_dir
   )
 }
@@ -408,7 +428,7 @@ for (sp in target_species_list) {
 # PART 3: Grouped categories (Contraction/Stable/Expansion) — all species ####
 # ==========================================================================
 
-stats_file_grp <- file.path(stats_dir, paste0(land_cover, "_", model_tag, "_category_stats_grouped.txt"))
+stats_file_grp <- file.path(stats_dir, paste0(run_label, "_", model_tag, "_category_stats_grouped.txt"))
 sink(stats_file_grp)
 
 cat("\n##################################################\n")
@@ -428,12 +448,12 @@ cat("Saved Part 3 (all-species grouped) statistics to:", stats_file_grp, "\n")
 make_violin_cld(
   analysis_45_grp, analysis_85_grp,
   group = "change_group", group_levels = grp_levels,
-  title = paste0("All ", land_cover, " species combined (", model_tag, ")"),
+  title = paste0("All ", run_label, " species combined (", model_tag, ")"),
   subtitle = paste0(nrow(target_sdm), " route-species observations across ",
                     length(unique(target_sdm$route)), " unique routes and ",
                     length(unique(target_sdm$species_code)), " species"),
   x_lab = "Range change group",
-  file_name = paste0(land_cover, "_", model_tag, "_ALL_species_trend_by_group_cld.png")
+  file_name = paste0(run_label, "_", model_tag, "_ALL_species_trend_by_group_cld.png")
 )
 
 
@@ -442,7 +462,7 @@ make_violin_cld(
 # ==========================================================================
 
 stats_file_species_grp <- file.path(stats_dir,
-                                     paste0(land_cover, "_", model_tag, "_category_stats_by_species_grouped.txt"))
+                                     paste0(run_label, "_", model_tag, "_category_stats_by_species_grouped.txt"))
 sink(stats_file_species_grp)
 
 cat("\n##################################################\n")
@@ -477,129 +497,31 @@ cat("Saved Part 4 (per-species grouped) statistics to:",
 
 for (sp in target_species_list) {
   sp_name <- unique(target_sdm$species[target_sdm$species_code == sp])
+  sp_grp  <- unique(target_sdm$group[target_sdm$species_code == sp])[1]
   sp_45 <- analysis_45_grp %>% filter(species_code == sp)
   sp_85 <- analysis_85_grp %>% filter(species_code == sp)
 
   make_violin_cld(
     sp_45, sp_85,
     group = "change_group", group_levels = grp_levels,
-    title = paste0(sp_name, " (", sp, ") (group:", land_cover, ", model:", model_tag, ")"),
+    title = paste0(sp_name, " (", sp, ") (group:", sp_grp, ", model:", model_tag, ")"),
     subtitle = paste0("n = ", nrow(sp_45), " (RCP4.5), ",
                       nrow(sp_85), " (RCP8.5) route observations"),
     x_lab = "Range change group",
-    file_name = paste0(land_cover, "_", model_tag, "_", sp, "_trend_by_group_cld.png"),
+    file_name = paste0(run_label, "_", model_tag, "_", sp, "_trend_by_group_cld.png"),
     dir = per_species_dir
   )
 }
 
 
-# # ==========================================================================
-# # PART 5: ALL land covers combined (ignore land_cover filter) ####
-# #   Pools every *_route_trends_sdm.csv in out_dir, across every land-cover
-# #   group present in spp_names_codes_group_aou.csv (e.g. grasslands and
-# #   aridlands), into one dataset for the all-species 8-category and grouped
-# #   analyses + plots.
-# # ==========================================================================
-# 
-# cat("\nCombining all species SDM files across ALL land covers...\n")
-# 
-# # Reuse the already-loaded, already-joined data (all_sdm_raw carries every
-# # species' Group from the lookup table) instead of re-reading the files.
-# if (nrow(all_sdm_raw) == 0) {
-#   warning("No SDM CSVs found in ", out_dir, " for the all-land-cover analysis.")
-# } else {
-#   all_sdm <- all_sdm_raw %>% rename(land_cover = Group)
-# 
-#   land_covers_used <- sort(unique(all_sdm$land_cover))
-#   cat("Land covers:", paste(land_covers_used, collapse = ", "), "\n")
-#   cat("Total rows:", nrow(all_sdm), "\n")
-#   cat("Species:", length(unique(all_sdm$species_code)), "\n")
-# 
-#   # Build combined analysis data (mirrors the per-land-cover setup above).
-#   analysis_45_all <- all_sdm %>%
-#     filter(!is.na(rcp45)) %>%
-#     transmute(route, species_code, category = rcp45, trend,
-#               route_num = as.integer(sub("^\\d+-", "", route)))
-# 
-#   analysis_85_all <- all_sdm %>%
-#     filter(!is.na(rcp85)) %>%
-#     transmute(route, species_code, category = rcp85, trend,
-#               route_num = as.integer(sub("^\\d+-", "", route)))
-# 
-#   analysis_45_all_grp <- analysis_45_all %>%
-#     mutate(change_group = factor(group_category(category),
-#                                  levels = c("Contraction", "Stable", "Expansion")))
-# 
-#   analysis_85_all_grp <- analysis_85_all %>%
-#     mutate(change_group = factor(group_category(category),
-#                                  levels = c("Contraction", "Stable", "Expansion")))
-# 
-#   lc_tag <- paste0("all_lc_", model_tag)
-# 
-#   # ----- 8 SDM categories (0-7) — all species, all land covers -----
-#   stats_file_all_8cat <- file.path(stats_dir,
-#                                     paste0(lc_tag, "_category_stats_8categories.txt"))
-#   sink(stats_file_all_8cat)
-# 
-#   cat("\n##################################################\n")
-#   cat("# PART 5: All 8 SDM categories (0-7) — all species, ALL land covers\n")
-#   cat("#   Land covers pooled:", paste(land_covers_used, collapse = ", "), "\n")
-#   cat("#   Model:", model_tag, "\n")
-#   cat("#   Response: trend (Trend)\n")
-#   cat("##################################################\n")
-# 
-#   run_category_tests(analysis_45_all, "trend", "category", "RCP 4.5", "Trend")
-#   run_category_tests(analysis_85_all, "trend", "category", "RCP 8.5", "Trend")
-# 
-#   sink()
-#   cat("Saved Part 5 (all-land-cover 8-category) statistics to:", stats_file_all_8cat, "\n")
-# 
-#   make_violin_cld(
-#     analysis_45_all, analysis_85_all,
-#     group = "category", group_levels = cat8_levels,
-#     title = paste0("All species combined — all land covers (", model_tag, ")"),
-#     subtitle = paste0(nrow(all_sdm), " route-species observations across ",
-#                       length(unique(all_sdm$route)), " unique routes, ",
-#                       length(unique(all_sdm$species_code)), " species, and ",
-#                       length(land_covers_used), " land covers"),
-#     x_lab = "SDM classified change category",
-#     file_name = paste0(lc_tag, "_ALL_species_trend_by_rcp_cld.png")
-#   )
-# 
-#   # ----- Grouped categories — all species, all land covers -----
-#   stats_file_all_grp <- file.path(stats_dir,
-#                                    paste0(lc_tag, "_category_stats_grouped.txt"))
-#   sink(stats_file_all_grp)
-# 
-#   cat("\n##################################################\n")
-#   cat("# PART 5: Grouped categories — all species, ALL land covers\n")
-#   cat("#   Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7\n")
-#   cat("#   (category 0 = never suitable, excluded)\n")
-#   cat("#   Land covers pooled:", paste(land_covers_used, collapse = ", "), "\n")
-#   cat("#   Model:", model_tag, "\n")
-#   cat("#   Response: trend (Trend)\n")
-#   cat("##################################################\n")
-# 
-#   run_category_tests(analysis_45_all_grp, "trend", "change_group", "RCP 4.5", "Trend")
-#   run_category_tests(analysis_85_all_grp, "trend", "change_group", "RCP 8.5", "Trend")
-# 
-#   sink()
-#   cat("Saved Part 5 (all-land-cover grouped) statistics to:", stats_file_all_grp, "\n")
-# 
-#   make_violin_cld(
-#     analysis_45_all_grp, analysis_85_all_grp,
-#     group = "change_group", group_levels = grp_levels,
-#     title = paste0("All species combined — all land covers (", model_tag, ")"),
-#     subtitle = paste0(nrow(all_sdm), " route-species observations across ",
-#                       length(unique(all_sdm$route)), " unique routes, ",
-#                       length(unique(all_sdm$species_code)), " species, and ",
-#                       length(land_covers_used), " land covers"),
-#     x_lab = "Range change group",
-#     file_name = paste0(lc_tag, "_ALL_species_trend_by_group_cld.png")
-#   )
-# }
-
-
+# PART 5 (all land covers combined) used to live here as a separate,
+# commented-out block. It's no longer needed as a separate section: Parts
+# 1-4 above now do the same thing natively whenever bird_group <- NA (see
+# the settings block and run_label/target_sdm construction near the top of
+# this script) — target_sdm already becomes "every group pooled" and every
+# stats/plot filename already uses run_label ("all_groups" in that case), so
+# there's nothing left for a separate Part 5 to add. Set bird_group to a
+# specific group instead of NA to get the original single-group behavior.
 
 cat("\n=== Statistical analysis + visualization complete (covariate pipeline, model_tag = ",
-    model_tag, ") ===\n", sep = "")
+    model_tag, ", bird_group = ", run_label, ") ===\n", sep = "")

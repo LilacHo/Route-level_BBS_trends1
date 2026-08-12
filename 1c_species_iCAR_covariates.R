@@ -1,94 +1,70 @@
 ## =============================================================================
-## Forest birds: iCAR route-level slope model + land-cover covariates
+## Full production run: iCAR route-level slope model, base vs. anthro
 ## Time period: 2010-2025
 ##
-## Fits ONE no-covariate model ("base") plus several single-covariate models
-## per species, for a RANDOM n_species_per_group-species panel drawn from
-## each of four forest bird groups (boreal_forests, eastern_forests,
-## subtropical_forests, western_forests). The group being fit determines
-## which covariates are used:
+## Fits TWO models for EVERY BBS species in this project's species list
+## (data/spp_names_codes_group_aou.csv, in_bbs == TRUE -- all groups:
+## aridlands, boreal_forests, eastern_forests, western_forests,
+## subtropical_forests, grasslands, marshlands, coastal, waterbirds,
+## generalists, arctic, urban_suburban -- currently 607 species):
 ##
-##   boreal_forests / western_forests (SIX models each):
-##     base, forests, evergreen_and_mixed_forests, anthro,
-##     forests_to_anthro, evergreen_and_mixed_forests_to_anthro
-##   eastern_forests (SIX models):
-##     base, forests, eastern_forests, anthro,
-##     forests_to_anthro, eastern_forests_to_anthro
-##   subtropical_forests (FOUR models):
-##     base, forests, anthro, forests_to_anthro
-##     (the user's request named only forests/anthro/forests_to_anthro but
-##     said "four models" -- "base" is assumed to be the implicit 4th, to
-##     match the pattern used by every other group here. Flag if that's
-##     wrong.)
+##   base   -- no covariate    (models/slope_iCAR_route_NB_New.stan)
+##   anthro -- data/Anthro.csv  (models/slope_iCAR_route_NB_New_covariate.stan)
+##     log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Anthro[r,t]
 ##
-## All non-base models share the same single-covariate Stan model
-## (models/slope_iCAR_route_NB_New_covariate.stan):
-##   log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1*Covariate[r,t]
-## "base" uses models/slope_iCAR_route_NB_New.stan (no covariate term).
+## This replaces the earlier per-group, many-covariates design (random
+## N-species panels x several habitat/anthro/transition covariates per
+## forest group). That pilot work (see output/files/aridlands_2010_2025.txt
+## and the gamma_lookup/beta_compare write-ups) found: (1) the "*_to_anthro"
+## transition covariates never produced a credible gamma1 in any tested
+## species -- too rare/sparse to be identifiable at this route/year
+## resolution; (2) "anthro" is the one covariate that consistently produced
+## a real, credible, well-powered effect; and (3) group-specific habitat
+## covariates aren't available/consistent across every one of the 12 groups
+## the way Anthro.csv is (it's already used project-wide). So this version
+## drops the per-group covariate machinery entirely and just runs anthro,
+## for everyone, everywhere.
 ##
-## For each group, all of that group's models are fit on the SAME reduced
-## dataset (only route-years where every one of that group's covariates is
-## non-NA), so they're directly comparable to each other -- same principle
-## used by the grasslands/marshlands versions of this script.
+## Both models are fit on the SAME reduced dataset per species (only
+## route-years where Anthro is non-NA), same "same data for a fair
+## comparison" principle used throughout this project.
 ##
-## Covariate data -- these CSVs now exist in data/ (dropped in after this
-## script was first drafted), in the same "one row per BBS route per year"
-## shape as every other covariate CSV in this project
-## (CountryNum/StateNum/Route/.../year/<value column>), loaded with
-## load_covariate() exactly like grassland habitat.csv / wetlands.csv /
-## Anthro.csv were:
-##   data/forests.csv                                     -- "forests" column
-##   data/evergreen_and_mixed_forests.csv                  -- "evergreen_and_mixed_forests" column
-##   data/eastern_forests.csv                              -- "eastern_forests" column
-##   data/Anthro.csv                                       -- "Anthro" column (already used by the
-##                                                             marshlands version of this script)
-##   data/forests to Anthro.csv                            -- "forests to Anthro" column
-##   data/evergreen_and_mixed_forests to Anthro.csv         -- "evergreen_and_mixed_forests to Anthro" column
-##   data/eastern_forests to Anthro.csv                     -- "eastern_forests to Anthro" column
-## Naming convention actually used by the files as provided: the multi-word
-## habitat covariates ("evergreen_and_mixed_forests", "eastern_forests")
-## use UNDERSCORES in both the filename and column header, matching their
-## model_tag names exactly -- but the " to Anthro" suffix on the transition
-## covariates keeps a literal SPACE (e.g. "eastern_forests to Anthro.csv"),
-## same as grassland habitat to anthro.csv / wetlands to Anthro.csv before
-## it. NOTE the tag "eastern_forests" (a covariate, for the eastern_forests
-## group only) is spelled identically to the bird group land_cover value
-## "eastern_forests" -- they mean different things (one is a Group value,
-## the other is a model_tag/covariate name) but share a name by coincidence;
-## watch for this if grepping the codebase later.
-##
-## Rescaling: the three "*_to_anthro" transition covariates are expected to
-## be zero-inflated/narrow like grassland_habitat_to_anthro and
-## wetlands_to_anthro were (most routes near-zero conversion in a given
-## year), so they're rescaled by their own observed max the same way, right
-## after loading. "forests", "evergreen_and_mixed_forests", "eastern_forests"
-## and "anthro" are standing-stock proportions and are NOT rescaled, matching
-## grassland_habitat/grassland_anthro/wetlands/anthro previously.
+## Covariate data: data/Anthro.csv, one row per BBS route per year
+## (CountryNum/StateNum/Route/.../year/Anthro), loaded with load_covariate()
+## the same way every other covariate in this project has been. Not
+## rescaled (standing-stock proportion already spans most of [0,1]).
 ##
 ## Route-key format: new_data$route (from bbsBayes2::prepare_data()) is
-## formatted "<StateNum>-<Route>" -- but ONLY when stratified by "bcr"; see
-## the grasslands/marshlands versions of this script for the full
-## explanation. strat = "bcr" is used here for the same reason.
+## formatted "<StateNum>-<Route>" -- but ONLY when stratified by "bcr" (see
+## every earlier version of this script for the full explanation). strat =
+## "bcr" is used here for the same reason.
 ##
-## Per user decision (carried over from the grasslands/marshlands versions):
-##   - Counts with a missing (NA) covariate value (for ANY of that group's
-##     non-base covariates) are dropped from that species' stan_data, applied
-##     once up front, so every model tag for a group (including "base") sees
-##     identical data.
+## Per user decision (carried over from every earlier version of this
+## script): counts with a missing (NA) Anthro value are dropped from that
+## species' stan_data, applied once up front, so both model tags see
+## identical data.
 ##
-## Random species selection: n_species_per_group species are drawn at random
-## (not hand-picked, not alphabetical) from each group's in_bbs == TRUE pool
-## via a fixed random seed (RANDOM_SEED below), so the panel is reproducible
-## across re-runs of this script without needing to hard-code species names.
+## Species: EVERY species in the project's list, not a random panel --
+## sorted alphabetically for a stable, resumable run order.
+##
+## force_refit defaults to FALSE here (unlike the earlier pilot versions of
+## this script, which defaulted to TRUE) -- this is a full ~600-species
+## production run, not a small re-run-every-time pilot, so by default this
+## script SKIPS any species/tag that already has a saved summ_fit.rds and
+## simply resumes where a previous, possibly-interrupted run left off. Set
+## force_refit <- TRUE to force a clean re-fit of everything instead.
+##
+## This is a LONG run: ~600 species x 2 models x (BBS data pull + Voronoi
+## neighbours + 4-chain/4000-iteration Stan fit) each. Expect this to take
+## many hours to days depending on hardware -- that's expected, not a bug.
 ##
 ## This script fits the models and saves, per species and per model tag:
 ##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_stanfit.rds
 ##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/route_info/<species>_<tag>_<firstYear>_<lastYear>_route_info.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
-## Plus, per group, a combined diagnostics CSV and (via
-## helper/gamma_lookup.R) a gamma1 lookup table -- both written once per
-## group so the four groups' outputs don't overwrite each other.
+## Plus one combined diagnostics CSV and (via helper/gamma_lookup.R) one
+## gamma1 lookup table across all species.
 ## =============================================================================
 
 library(bbsBayes2)
@@ -107,7 +83,7 @@ source("functions/posterior_summary_functions.R")
 # Ensure cmdstanr writes output to CSV (default) and set output_dir for temp
 # files. Each species/model_tag combo gets its own subfolder under here
 # (created/deleted inside fit_one_covariate_model()) so raw per-chain CSVs
-# don't pile up in %TEMP% across a whole run of many species x model tags.
+# don't pile up in %TEMP% across a run of ~600 species x 2 model tags.
 cmdstanr_output_dir <- file.path(tempdir(), "cmdstan_output")
 if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive = TRUE)
 
@@ -116,17 +92,14 @@ firstYear  <- 2010
 lastYear   <- 2025
 dt         <- lastYear - firstYear
 
-strat <- "bcr"   # NOT "bbs_usgs" -- see grasslands/marshlands versions of
-                 # this script for the full explanation.
+strat <- "bcr"   # NOT "bbs_usgs" -- see earlier versions of this script for
+                 # the full explanation.
 
-# Re-fit control: if TRUE, ignore existing fits and re-run the model.
-force_refit <- TRUE
+# Re-fit control: FALSE by default for this full-species run -- see header
+# comment. Set TRUE to force a clean re-fit of everything.
+force_refit <- FALSE
 
-forest_groups       <- c("boreal_forests", "eastern_forests",
-                         "subtropical_forests", "western_forests")
-n_species_per_group <- 10
-RANDOM_SEED          <- 2026   # fixed so the random species panels below are
-                               # reproducible across re-runs
+model_tags <- c("base", "anthro")
 
 # Output directories --------------------------------------------------------
 output_dir <- here::here("output")
@@ -142,9 +115,9 @@ if (!dir.exists(route_info_dir)) dir.create(route_info_dir, recursive = TRUE)
 # Covariate loader ----------------------------------------------------------
 # One row per route per year; build a "<StateNum>-<Route>" key to match
 # new_data$route below. check.names = FALSE preserves value_col exactly as
-# it appears in the CSV header (several of these covariate names contain
-# spaces). out_name becomes both the joined column name in new_data AND the
-# model_tag used to select it in fit_one_covariate_model() (see below).
+# it appears in the CSV header. out_name becomes both the joined column name
+# in new_data AND the model_tag used to select it in
+# fit_one_covariate_model() (see below).
 load_covariate <- function(file, value_col, out_name) {
   read.csv(here::here("data", file), stringsAsFactors = FALSE, check.names = FALSE) %>%
     transmute(route_key = paste(StateNum, Route, sep = "-"),
@@ -155,8 +128,9 @@ load_covariate <- function(file, value_col, out_name) {
 }
 
 # Load one covariate per the spec above, optionally rescaling by its own
-# observed max (for the zero-inflated "*_to_anthro" transition covariates --
-# see header comment).
+# observed max. Kept as a thin wrapper (rather than calling load_covariate()
+# directly) so this script stays easy to extend with another covariate
+# later without restructuring the loop below.
 load_group_covariate <- function(file, value_col, out_name, rescale) {
   lk <- load_covariate(file, value_col, out_name)
   if (rescale) {
@@ -169,93 +143,54 @@ load_group_covariate <- function(file, value_col, out_name, rescale) {
   lk
 }
 
-# Per-group model tags + covariate specs -------------------------------------
-# "forests"/"anthro" style tags below double as both the model_tag AND the
-# joined column name in new_data (see prepare_species_data()/
+# Covariate spec -- "anthro" doubles as both the model_tag AND the joined
+# column name in new_data (see prepare_species_data()/
 # fit_one_covariate_model() below, which key off this directly instead of a
-# per-tag if/else chain).
-conifer_group_covariates <- list(
-  forests                              = list(file = "forests.csv", value_col = "forests", rescale = FALSE),
-  evergreen_and_mixed_forests          = list(file = "evergreen_and_mixed_forests.csv", value_col = "evergreen_and_mixed_forests", rescale = FALSE),
-  anthro                               = list(file = "Anthro.csv", value_col = "Anthro", rescale = FALSE),
-  forests_to_anthro                    = list(file = "forests to Anthro.csv", value_col = "forests to Anthro", rescale = TRUE),
-  evergreen_and_mixed_forests_to_anthro = list(file = "evergreen_and_mixed_forests to Anthro.csv", value_col = "evergreen_and_mixed_forests to Anthro", rescale = TRUE)
+# per-tag if/else chain). Anthro.csv is used project-wide, independent of
+# bird group, so there is no per-group covariate config here anymore.
+covariate_specs <- list(
+  anthro = list(file = "Anthro.csv", value_col = "Anthro", rescale = FALSE)
 )
 
-group_config <- list(
-  boreal_forests = list(
-    model_tags = c("base", "forests", "evergreen_and_mixed_forests", "anthro",
-                   "forests_to_anthro", "evergreen_and_mixed_forests_to_anthro"),
-    covariates = conifer_group_covariates
-  ),
-  western_forests = list(
-    model_tags = c("base", "forests", "evergreen_and_mixed_forests", "anthro",
-                   "forests_to_anthro", "evergreen_and_mixed_forests_to_anthro"),
-    covariates = conifer_group_covariates
-  ),
-  eastern_forests = list(
-    model_tags = c("base", "forests", "eastern_forests", "anthro",
-                   "forests_to_anthro", "eastern_forests_to_anthro"),
-    covariates = list(
-      forests                   = list(file = "forests.csv", value_col = "forests", rescale = FALSE),
-      eastern_forests           = list(file = "eastern_forests.csv", value_col = "eastern_forests", rescale = FALSE),
-      anthro                    = list(file = "Anthro.csv", value_col = "Anthro", rescale = FALSE),
-      forests_to_anthro         = list(file = "forests to Anthro.csv", value_col = "forests to Anthro", rescale = TRUE),
-      eastern_forests_to_anthro = list(file = "eastern_forests to Anthro.csv", value_col = "eastern_forests to Anthro", rescale = TRUE)
-    )
-  ),
-  subtropical_forests = list(
-    # Request said "four models: forests, Anthro, forests to Anthro" (three
-    # named) -- "base" added here as the assumed implicit 4th, matching
-    # every other group's pattern (see header comment).
-    model_tags = c("base", "forests", "anthro", "forests_to_anthro"),
-    covariates = list(
-      forests           = list(file = "forests.csv", value_col = "forests", rescale = FALSE),
-      anthro            = list(file = "Anthro.csv", value_col = "Anthro", rescale = FALSE),
-      forests_to_anthro = list(file = "forests to Anthro.csv", value_col = "forests to Anthro", rescale = TRUE)
-    )
-  )
-)
-
-# Species list + random per-group panels -------------------------------------
+# Species list -- EVERY species, not a random panel -----------------------
 spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                    stringsAsFactors = FALSE)
 
-set.seed(RANDOM_SEED)
-species_by_group <- list()
-for (g in forest_groups) {
-  pool <- spp_df %>%
-    filter(Group == g, in_bbs == TRUE) %>%
-    distinct(Common.Name, Code, .keep_all = TRUE)
-  species_by_group[[g]] <- pool %>%
-    slice_sample(n = min(n_species_per_group, nrow(pool))) %>%
-    arrange(Common.Name)
-}
+target_spp <- spp_df %>%
+  filter(in_bbs == TRUE) %>%
+  distinct(Common.Name, Code, .keep_all = TRUE) %>%
+  arrange(Common.Name)
 
-cat("=== Random", n_species_per_group, "-species panels per forest group (seed =", RANDOM_SEED, ") ===\n")
-for (g in forest_groups) {
-  cat(" ", g, "(", nrow(species_by_group[[g]]), "species ):",
-      paste(species_by_group[[g]]$Common.Name, collapse = ", "), "\n")
-}
+cat("=== Full run: ", nrow(target_spp), " species x ", length(model_tags),
+    " models (", paste(model_tags, collapse = ", "), ") ===\n", sep = "")
+cat("Groups represented:", paste(sort(unique(target_spp$Group)), collapse = ", "), "\n")
 
 # Helper: convert species name to file-safe format ------------------------
 species_to_f <- function(sp) {
   gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
 }
 
-# Compile the Stan models once (reused across every group/species) ---------
+# Compile the Stan models once (reused across every species) ---------------
 model_base   <- cmdstan_model("models/slope_iCAR_route_NB_New.stan",
                               stanc_options = list("O1"))
 model_single <- cmdstan_model("models/slope_iCAR_route_NB_New_covariate.stan",
                               stanc_options = list("O1"))
 
+# Load the (single) covariate once, up front, for every species ------------
+cat("Loading covariates...\n")
+covariate_lookups <- list()
+for (cn in setdiff(model_tags, "base")) {
+  spec <- covariate_specs[[cn]]
+  covariate_lookups[[cn]] <- load_group_covariate(spec$file, spec$value_col, cn, spec$rescale)
+}
+
 # ==========================================================================
 # Function: data-prep pipeline for one species (BBS data, covariate join,
 # NA-drop, spatial neighbours). Generalized to an arbitrary NAMED LIST of
-# covariate lookups (one per non-base model_tag for the current group)
-# instead of a fixed 3-covariate signature, so the same function serves
-# every group's covariate set. Shared across all of a group's model tags for
-# a species so they fit on identical data.
+# covariate lookups (currently just "anthro") instead of a fixed signature,
+# so this still supports adding another covariate back later without
+# restructuring. Shared across both model tags for a species so they fit on
+# identical data.
 # ==========================================================================
 prepare_species_data <- function(species, species_bbs, strat,
                                  firstYear, lastYear, covariate_lookups) {
@@ -296,7 +231,7 @@ prepare_species_data <- function(species, species_bbs, strat,
     stop("Too few observations (", nrow(new_data), ")")
   }
 
-  # Join every covariate for this group by route + calendar year ------------
+  # Join every covariate by route + calendar year ---------------------------
   n_before <- nrow(new_data)
   cov_names <- names(covariate_lookups)
   for (cn in cov_names) {
@@ -321,9 +256,9 @@ prepare_species_data <- function(species, species_bbs, strat,
          "continental-US filter and the key construction in load_covariate() instead.")
   }
 
-  # Drop rows missing ANY of this group's covariates -- same reduced-dataset
-  # principle used throughout this project, so every model tag (including
-  # "base") fits on identical rows.
+  # Drop rows missing anthro -- same reduced-dataset principle used
+  # throughout this project, so both model tags (including "base") fit on
+  # identical rows.
   new_data <- new_data %>% filter(complete.cases(new_data[, cov_names, drop = FALSE]))
   n_dropped <- n_before - nrow(new_data)
   cat("    Dropped", n_dropped, "of", n_before,
@@ -407,11 +342,8 @@ prepare_species_data <- function(species, species_bbs, strat,
 }
 
 # ==========================================================================
-# Function: fit one model_tag for one species, given the shared prepared
-# data from prepare_species_data(). Generalized: any non-"base" tag is
-# assumed to name a column already joined onto new_data (see
-# prepare_species_data() above, which joins each covariate under exactly its
-# config name) -- no per-tag if/else chain needed. Returns a one-row
+# Function: fit one model_tag ("base" or "anthro") for one species, given
+# the shared prepared data from prepare_species_data(). Returns a one-row
 # diagnostics data.frame (or NULL on failure, handled by the caller).
 # ==========================================================================
 fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
@@ -426,7 +358,7 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
   } else {
     if (!model_tag %in% names(new_data)) {
       stop("model_tag '", model_tag, "' has no matching covariate column in new_data — ",
-           "check group_config's covariates list for this group.")
+           "check covariate_specs.")
     }
     stan_model <- model_single
     stan_data  <- c(base_stan_data, list(covariate = new_data[[model_tag]]))
@@ -507,122 +439,105 @@ fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
 }
 
 # ==========================================================================
-# Outer loop: one forest group at a time -- load that group's covariates,
-# fit its species panel x model_tags, write its diagnostics + gamma1 lookup.
+# Main loop: every species, both model tags. Flat -- no per-group looping
+# anymore, since anthro applies the same way to every species regardless of
+# its Group.
 # ==========================================================================
-# gamma_lookup_table() is soft-coded (see helper/gamma_lookup.R) -- source
-# it once here (skipping its auto-run, since target_spp/model_tags/
-# land_cover aren't fixed for the whole script — they change every group
-# below) and call gamma_lookup_table() explicitly per group instead.
 gamma_lookup_skip_autorun <- TRUE
 source(here::here("helper", "gamma_lookup.R"))
 
-results_list_all <- list()
+results_list <- list()
+diagnostics_list <- list()
 
-for (land_cover in forest_groups) {
+for (i in seq_len(nrow(target_spp))) {
+  sp       <- target_spp$Common.Name[i]
+  sp_f     <- species_to_f(sp)
+  sp_code  <- target_spp$Code[i]
+  sp_bbs   <- target_spp$bbs_english[i]
+  sp_group <- target_spp$Group[i]
 
-  cfg         <- group_config[[land_cover]]
-  model_tags  <- cfg$model_tags
-  target_spp  <- species_by_group[[land_cover]]
+  cat("\n================================================================\n")
+  cat("  [", i, "/", nrow(target_spp), "]", sp, " (", sp_group, ")\n")
+  cat("================================================================\n")
 
-  cat("\n\n################################################################\n")
-  cat("# FOREST GROUP:", land_cover, " | models:", paste(model_tags, collapse = ", "), "\n")
-  cat("################################################################\n")
+  all_exist <- all(vapply(model_tags, function(tag) {
+    out_base  <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
+    summ_file <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
+    file.exists(summ_file)
+  }, logical(1)))
 
-  # Load this group's covariate lookups (as-if the CSVs already exist --
-  # see header comment) ------------------------------------------------------
-  cat("Loading covariates for", land_cover, "...\n")
-  covariate_lookups <- list()
-  for (cn in setdiff(model_tags, "base")) {
-    spec <- cfg$covariates[[cn]]
-    covariate_lookups[[cn]] <- load_group_covariate(spec$file, spec$value_col, cn, spec$rescale)
+  if (all_exist && !force_refit) {
+    cat("  Skipping (both", paste(model_tags, collapse = " and "), "already fitted for", sp, ")\n")
+    next
   }
 
-  results_list <- list()
-  diagnostics_list <- list()
+  prepped <- tryCatch(
+    prepare_species_data(species = sp, species_bbs = sp_bbs, strat = strat,
+                         firstYear = firstYear, lastYear = lastYear,
+                         covariate_lookups = covariate_lookups),
+    error = function(e) {
+      message("  [ERROR] Data prep failed for ", sp, ": ", conditionMessage(e))
+      return(NULL)
+    }
+  )
+  if (is.null(prepped)) next
 
-  for (i in seq_len(nrow(target_spp))) {
-    sp      <- target_spp$Common.Name[i]
-    sp_f    <- species_to_f(sp)
-    sp_code <- target_spp$Code[i]
-    sp_bbs  <- target_spp$bbs_english[i]
-
-    cat("\n================================================================\n")
-    cat("  [", land_cover, i, "/", nrow(target_spp), "]", sp, "\n")
-    cat("================================================================\n")
-
-    all_exist <- all(vapply(model_tags, function(tag) {
-      out_base  <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-      summ_file <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
-      file.exists(summ_file)
-    }, logical(1)))
-
-    if (all_exist && !force_refit) {
-      cat("  Skipping (all", length(model_tags), "models already fitted for", sp, ")\n")
+  for (tag in model_tags) {
+    out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
+    summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
+    stan_data_file <- here::here("data", "stan_data",
+                                 paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
+    if (file.exists(summ_file) && file.exists(stan_data_file) && !force_refit) {
+      cat("  Skipping (already fitted):", basename(summ_file), "\n")
       next
     }
 
-    prepped <- tryCatch(
-      prepare_species_data(species = sp, species_bbs = sp_bbs, strat = strat,
-                           firstYear = firstYear, lastYear = lastYear,
-                           covariate_lookups = covariate_lookups),
+    diagnostics <- tryCatch(
+      fit_one_covariate_model(species = sp, species_f = sp_f, model_tag = tag,
+                              prepped = prepped, firstYear = firstYear,
+                              lastYear = lastYear),
       error = function(e) {
-        message("  [ERROR] Data prep failed for ", sp, ": ", conditionMessage(e))
+        message("  [ERROR] Model '", tag, "' failed for ", sp, ": ", conditionMessage(e))
         return(NULL)
       }
     )
-    if (is.null(prepped)) next
+    if (is.null(diagnostics)) next
 
-    for (tag in model_tags) {
-      out_base       <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
-      summ_file      <- file.path(rds_dir, paste0(out_base, "_summ_fit.rds"))
-      stan_data_file <- here::here("data", "stan_data",
-                                   paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_stan_data.RData"))
-      if (file.exists(summ_file) && file.exists(stan_data_file) && !force_refit) {
-        cat("  Skipping (already fitted):", basename(summ_file), "\n")
-        next
-      }
+    diagnostics$group <- sp_group
+    results_list[[paste(sp, tag, sep = " | ")]] <- summ_file
+    diagnostics_list[[paste(sp, tag, sep = " | ")]] <- diagnostics
 
-      diagnostics <- tryCatch(
-        fit_one_covariate_model(species = sp, species_f = sp_f, model_tag = tag,
-                                prepped = prepped, firstYear = firstYear,
-                                lastYear = lastYear),
-        error = function(e) {
-          message("  [ERROR] Model '", tag, "' failed for ", sp, ": ", conditionMessage(e))
-          return(NULL)
-        }
-      )
-      if (is.null(diagnostics)) next
-
-      results_list[[paste(sp, tag, sep = " | ")]] <- summ_file
-      diagnostics_list[[paste(sp, tag, sep = " | ")]] <- diagnostics
-
-      cat("  Done —", tag, "fit + diagnostics saved for", sp, "\n")
-    }
+    cat("  Done —", tag, "fit + diagnostics saved for", sp, "\n")
   }
 
-  # Combined diagnostics CSV for this group -----------------------------------
-  if (length(diagnostics_list) > 0) {
-    diagnostics_all <- bind_rows(diagnostics_list)
+  # Write/refresh the combined diagnostics CSV every 25 species, not just at
+  # the very end -- with a ~600-species, multi-hour/day run, losing all
+  # progress info to an interruption right before the final write would be
+  # painful. Cheap to do (append-in-memory, rewrite whole file).
+  if (length(diagnostics_list) > 0 && i %% 25 == 0) {
     diag_csv <- file.path(output_dir,
-                          paste0("diagnostics_covariates_", land_cover, "_",
+                          paste0("diagnostics_covariates_all_species_anthro_",
                                  firstYear, "_", lastYear, ".csv"))
-    write.csv(diagnostics_all, diag_csv, row.names = FALSE)
-    cat("\nDiagnostics for", land_cover, "written to:", diag_csv, "\n")
-    print(diagnostics_all)
+    write.csv(bind_rows(diagnostics_list), diag_csv, row.names = FALSE)
+    cat("  [checkpoint] diagnostics written to:", diag_csv, "(", i, "/", nrow(target_spp), "species processed )\n")
   }
-
-  # gamma1 lookup table for this group -----------------------------------------
-  gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
-                     firstYear = firstYear, lastYear = lastYear,
-                     rds_dir = rds_dir, land_cover = land_cover)
-
-  cat("\n=== Summary for", land_cover, "===\n")
-  cat("Species x model fits this run:", length(results_list), "\n")
-
-  results_list_all[[land_cover]] <- results_list
 }
 
-cat("\n\n=== ALL FOREST GROUPS DONE ===\n")
-cat("Total species x model fits this run:", sum(lengths(results_list_all)), "\n")
+# Final combined diagnostics CSV ---------------------------------------------
+if (length(diagnostics_list) > 0) {
+  diagnostics_all <- bind_rows(diagnostics_list)
+  diag_csv <- file.path(output_dir,
+                        paste0("diagnostics_covariates_all_species_anthro_",
+                               firstYear, "_", lastYear, ".csv"))
+  write.csv(diagnostics_all, diag_csv, row.names = FALSE)
+  cat("\nDiagnostics written to:", diag_csv, "\n")
+}
+
+# gamma1 lookup table across every species -----------------------------------
+gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
+                   firstYear = firstYear, lastYear = lastYear,
+                   rds_dir = rds_dir, bird_group = "all_species_anthro")
+
+cat("\n\n=== DONE ===\n")
+cat("Species x model fits this run:", length(results_list), "\n")
 cat("Fits saved in:", output_dir, "\n")

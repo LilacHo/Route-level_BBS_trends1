@@ -3,23 +3,23 @@
 ## for cross-model comparison.
 ## Time period: 2010-2025
 ##
-## Combines FOUR "model" sources per species, all fit by
-## 1c_species_iCAR_covariates.R on the SAME covariate-reduced dataset (so
-## they're directly comparable to each other): "base" (no covariates),
-## "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro".
-## All three non-base models are single-covariate fits (there is no joint
-## two-covariate model in this design — "grassland_anthro" here is a single
-## pre-composited covariate, Developed*+CultivatedCrops, not grassland and
-## anthro fit together).
+## Covariate-pipeline counterpart of 2_generate_route_trend_csvs.R, updated to
+## match the new 1c_species_iCAR_covariates.R: EVERY species in
+## data/spp_names_codes_group_aou.csv (in_bbs == TRUE, all 12 groups), TWO
+## models each -- "base" (no covariates) and "anthro" (data/Anthro.csv) --
+## instead of one land-cover group at a time with four grassland-specific
+## tags. There is no bird_group filter here anymore; species from every group
+## are combined into the same output (each row still carries its own Group,
+## joined in below, so a later step can filter/facet by it if needed).
 ##
-## NOTE: "base" here is 1c's own no-covariate refit on the reduced dataset —
-## NOT the full-dataset base fit from 1_species_iCAR_2010_2025.R /
-## 2_generate_route_trend_csvs.R. That full-dataset fit uses more routes and
-## is intentionally not comparable to the covariate models, so it is not
-## included in this combined file.
+## NOTE: "base" here is 1c's own no-covariate refit on the anthro-reduced
+## dataset (only route-years where Anthro is non-NA) — NOT the full-dataset
+## base fit from 1_species_iCAR_2010_2025.R / 2_generate_route_trend_csvs.R.
+## That full-dataset fit uses more routes and is intentionally not comparable
+## to the covariate models, so it is not included in this combined file.
 ##
-## For all four models, reads the summary fit + lightweight route lookup
-## saved by 1c_species_iCAR_covariates.R:
+## For both models, reads the summary fit + lightweight route lookup saved
+## by 1c_species_iCAR_covariates.R:
 ##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/route_info/<species>_<tag>_<firstYear>_<lastYear>_route_info.rds
 ##     (route, routeF, latitude, longitude only — NOT the full stan_data.RData,
@@ -27,18 +27,19 @@
 ## and derives the same per-route quantities as 2_generate_route_trend_csvs.R
 ## (trend, trend_lci, trend_uci, rel_abundance from beta/alpha).
 ##
-## Writes TWO combined CSVs across every species and every model:
+## Writes TWO combined CSVs across every species and both models:
 ##
 ##   1) Per-route file — one row per route/species/model:
-##      output/species_routes_covariates/all_route_trends_<land_cover>_<firstYear>_<lastYear>.csv
-##      columns: species, species_code, model, route, latitude, longitude,
-##               alpha, beta, trend, trend_lci, trend_uci, rel_abundance
+##      output/species_routes_covariates/all_route_trends_all_species_anthro_<firstYear>_<lastYear>.csv
+##      columns: species, species_code, group, model, route, latitude,
+##               longitude, alpha, beta, trend, trend_lci, trend_uci,
+##               rel_abundance
 ##
 ##   2) Model-level file — one row per species/model (NOT per route), for
 ##      quantities that are constant across a species' routes:
-##      output/species_routes_covariates/all_model_level_summary_<land_cover>_<firstYear>_<lastYear>.csv
-##      columns: species, species_code, model, n_routes, gamma1, gamma1_lci,
-##               gamma1_uci, gamma1_excludes_zero
+##      output/species_routes_covariates/all_model_level_summary_all_species_anthro_<firstYear>_<lastYear>.csv
+##      columns: species, species_code, group, model, n_routes, gamma1,
+##               gamma1_lci, gamma1_uci, gamma1_excludes_zero
 ##
 ## gamma1 is the covariate effect on log(lambda) — a single value per
 ## species+model, not per-route, which is why it lives in the separate
@@ -59,15 +60,23 @@
 ## species_code per input file, which the single combined CSV above doesn't
 ## satisfy:
 ##   output/species_routes_covariates/per_species/<species>_<model_tag>_route_trends.csv
-##   columns: species, species_code, model, route, latitude, longitude,
-##            alpha, beta, trend, trend_lci, trend_uci, rel_abundance
-## (same columns as the combined per-route file, including "model", which
-## 3c_add_SDM_covariates.R/4c_statistical_analysis_and_visualization_covariates.R
-## just carry through unchanged since they have no model-specific logic.)
+##   columns: species, species_code, group, model, route, latitude,
+##            longitude, alpha, beta, trend, trend_lci, trend_uci,
+##            rel_abundance
+## (same columns as the combined per-route file, including "group" and
+## "model", which 3c_add_SDM_covariates.R/
+## 4c_statistical_analysis_and_visualization_covariates.R just carry through
+## unchanged since they have no model-specific logic. "group" also lets 3c
+## resolve each species' land-cover group without a separate lookup, and
+## lets 4c filter to one group -- or combine all of them -- without
+## re-joining spp_names_codes_group_aou.csv itself.)
 ##
 ## This is a post-processing / combination step only; it does not fit or
-## re-derive anything beyond what 2_generate_route_trend_csvs.R and
-## 1c_species_iCAR_covariates.R already produced.
+## re-derive anything beyond what 1c_species_iCAR_covariates.R already
+## produced. With ~600 species x 2 models, this reads over a thousand
+## summ_fit.rds/route_info.rds file pairs — expect this to take a while, and
+## it is safe to re-run at any point: species/tags 1c hasn't fit yet are
+## just skipped with a message, not treated as an error.
 ## =============================================================================
 
 library(tidyverse)
@@ -76,10 +85,9 @@ library(here)
 here::i_am("2c_generate_route_trend_csvs_covariates.R")
 
 # Settings (match 1c_species_iCAR_covariates.R) ----------------------------
-land_cover <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2025
-model_tags <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
+model_tags <- c("base", "anthro")
 
 output_dir       <- here::here("output")
 rds_dir          <- here::here("output", "rds")         # matches 1c_species_iCAR_covariates.R
@@ -89,18 +97,20 @@ if (!dir.exists(combined_out_dir)) dir.create(combined_out_dir, recursive = TRUE
 per_species_out_dir <- here::here("output", "species_routes_covariates", "per_species")
 if (!dir.exists(per_species_out_dir)) dir.create(per_species_out_dir, recursive = TRUE)
 
-# Target group species list -------------------------------------------------
+run_label <- "all_species_anthro"   # used only to name output files (see header)
+
+# Full species list -- every group, no bird_group filter ---------------------
 spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                    stringsAsFactors = FALSE)
 
 target_spp <- spp_df %>%
-  filter(Group == land_cover, in_bbs == TRUE) %>%
-  distinct(Common.Name, Code, .keep_all = TRUE) %>%
+  filter(in_bbs == TRUE) %>%
+  distinct(Common.Name, Code, Group, .keep_all = TRUE) %>%
   arrange(Common.Name)
 
-cat("=== Combine route-trend CSVs across all models ===\n")
-cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
-cat("Species in group (n =", nrow(target_spp), ")\n")
+cat("=== Combine route-trend CSVs across all species and both models ===\n")
+cat("Period:", firstYear, "-", lastYear, "\n")
+cat("Species (n =", nrow(target_spp), ") across", length(unique(target_spp$Group)), "groups\n")
 cat("Models:", paste(model_tags, collapse = ", "), "\n")
 
 # Helper: convert species name to file-safe format ------------------------
@@ -109,24 +119,26 @@ species_to_f <- function(sp) {
 }
 
 # Column order every row is coerced to before combining --------------------
-route_cols <- c("species", "species_code", "model", "route",
+route_cols <- c("species", "species_code", "group", "model", "route",
                 "latitude", "longitude", "alpha", "beta",
                 "trend", "trend_lci", "trend_uci", "rel_abundance")
-model_cols <- c("species", "species_code", "model", "n_routes",
+model_cols <- c("species", "species_code", "group", "model", "n_routes",
                 "gamma1", "gamma1_lci", "gamma1_uci", "gamma1_excludes_zero")
 
 all_route_rows <- list()
 all_model_rows <- list()
+n_missing <- 0
 
 for (i in seq_len(nrow(target_spp))) {
-  sp      <- target_spp$Common.Name[i]
-  sp_f    <- species_to_f(sp)
-  sp_code <- target_spp$Code[i]
+  sp       <- target_spp$Common.Name[i]
+  sp_f     <- species_to_f(sp)
+  sp_code  <- target_spp$Code[i]
+  sp_group <- target_spp$Group[i]
 
-  cat("\n[", i, "/", nrow(target_spp), "]", sp, "\n")
+  if (i %% 25 == 0 || i == 1) cat("\n[", i, "/", nrow(target_spp), "]", sp, "(", sp_group, ")\n")
 
-  # All four models are fit by 1c_species_iCAR_covariates.R on the identical
-  # reduced dataset, so all four are read the same way here.
+  # Both models are fit by 1c_species_iCAR_covariates.R on the identical
+  # reduced dataset (rows with non-NA Anthro), so both are read the same way.
   for (tag in model_tags) {
 
     out_base        <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
@@ -135,8 +147,10 @@ for (i in seq_len(nrow(target_spp))) {
                                  paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_route_info.rds"))
 
     if (!file.exists(summ_file) || !file.exists(route_info_file)) {
-      cat("  [", tag, "] No fitted output found — run 1c_species_iCAR_covariates.R first. Skipping.\n")
-      next
+      n_missing <- n_missing + 1
+      next   # not yet fit by 1c -- silently skipped rather than erroring, since
+             # a ~600-species run is very likely still in progress when this
+             # is run; see the summary count printed at the end.
     }
 
     summ       <- readRDS(summ_file)
@@ -159,10 +173,10 @@ for (i in seq_len(nrow(target_spp))) {
                 rel_abundance = exp(mean))
 
     # Species+model-level covariate effect, not per-route. "base" has no
-    # gamma1; each of the three covariate models has exactly one. Pull the
-    # 90% credible interval (q5/q95) alongside the mean, same way beta_summ
-    # does above, so downstream analyses can assess whether gamma1 is
-    # credibly different from zero instead of only seeing the point estimate.
+    # gamma1; "anthro" has exactly one. Pull the 90% credible interval
+    # (q5/q95) alongside the mean, same way beta_summ does above, so
+    # downstream analyses can assess whether gamma1 is credibly different
+    # from zero instead of only seeing the point estimate.
     if ("gamma1" %in% summ$variable) {
       gamma1_row        <- summ[summ$variable == "gamma1", ]
       gamma1_val        <- gamma1_row$mean[1]
@@ -186,6 +200,7 @@ for (i in seq_len(nrow(target_spp))) {
       left_join(route_info, by = "routeF") %>%
       mutate(species      = sp,
              species_code = sp_code,
+             group        = sp_group,
              model        = tag) %>%
       arrange(routeF) %>%
       select(all_of(route_cols))
@@ -195,6 +210,7 @@ for (i in seq_len(nrow(target_spp))) {
     all_model_rows[[paste(sp, tag, sep = " | ")]] <- data.frame(
       species              = sp,
       species_code         = sp_code,
+      group                = sp_group,
       model                = tag,
       n_routes             = nrow(route_trends),
       gamma1               = gamma1_val,
@@ -211,8 +227,6 @@ for (i in seq_len(nrow(target_spp))) {
     per_species_csv <- file.path(per_species_out_dir,
                                  paste0(sp_f, "_", tag, "_route_trends.csv"))
     write.csv(route_trends, per_species_csv, row.names = FALSE)
-
-    cat("  [", tag, "] ", nrow(route_trends), "routes -> ", basename(per_species_csv), "\n")
   }
 }
 
@@ -224,10 +238,10 @@ all_route_trends <- bind_rows(all_route_rows)
 all_model_summary <- bind_rows(all_model_rows)
 
 route_csv <- file.path(combined_out_dir,
-                       paste0("all_route_trends_", land_cover, "_",
+                       paste0("all_route_trends_", run_label, "_",
                               firstYear, "_", lastYear, ".csv"))
 model_csv <- file.path(combined_out_dir,
-                       paste0("all_model_level_summary_", land_cover, "_",
+                       paste0("all_model_level_summary_", run_label, "_",
                               firstYear, "_", lastYear, ".csv"))
 
 write.csv(all_route_trends, route_csv, row.names = FALSE)
@@ -235,21 +249,29 @@ write.csv(all_model_summary, model_csv, row.names = FALSE)
 
 cat("\n=== Summary ===\n")
 cat("Per-route rows:", nrow(all_route_trends), "\n")
-cat("Species x model combinations:", length(all_route_rows), "\n")
+cat("Species x model combinations written:", length(all_route_rows), "\n")
+cat("Species x model combinations not yet fit by 1c (skipped):", n_missing, "\n")
 print(table(all_route_trends$model))
-cat("Per-route CSV written to:", route_csv, "\n")
+cat("\nBy group:\n")
+print(all_model_summary %>% distinct(species, group) %>% count(group, sort = TRUE))
+cat("\nPer-route CSV written to:", route_csv, "\n")
 cat("Model-level CSV written to:", model_csv, "\n")
 cat("Per-species-per-model CSVs written to:", per_species_out_dir,
     "(", length(all_route_rows), "files )\n")
 
-# Quick check on the new gamma1 CI columns: how many species have a 90%
-# credible interval that excludes zero, per covariate model.
-cat("\nSpecies with gamma1's 90% CI excluding zero (credible effect), by model:\n")
+# Quick check on the gamma1 CI column: how many species have a 90% credible
+# interval that excludes zero for anthro, overall and by group.
+cat("\nSpecies with anthro's gamma1 90% CI excluding zero (credible effect):\n")
 print(all_model_summary %>%
-        filter(model != "base") %>%
-        group_by(model) %>%
-        summarise(n_species          = n(),
-                  n_excludes_zero    = sum(gamma1_excludes_zero, na.rm = TRUE),
-                  .groups = "drop"))
+        filter(model == "anthro") %>%
+        summarise(n_species = n(), n_excludes_zero = sum(gamma1_excludes_zero, na.rm = TRUE)))
 
-cat("Next: run 3c_add_SDM_covariates.R to add climate-suitability columns.\n")
+cat("\nSame, broken down by group:\n")
+print(all_model_summary %>%
+        filter(model == "anthro") %>%
+        group_by(group) %>%
+        summarise(n_species = n(), n_excludes_zero = sum(gamma1_excludes_zero, na.rm = TRUE),
+                  .groups = "drop") %>%
+        arrange(desc(n_species)))
+
+cat("\nNext: run 3c_add_SDM_covariates.R to add climate-suitability columns.\n")

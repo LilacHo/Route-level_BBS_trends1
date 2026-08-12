@@ -29,7 +29,7 @@
 ##   output/ppc/<species>_ppc_ecdf.png
 ##   output/ppc/<species>_ppc_rootogram.png
 ##   output/ppc/<species>_ppc_stats.png
-##   output/ppc/ppc_bayes_pvalues_<land_cover>_<firstYear>_<lastYear>.csv
+##   output/ppc/ppc_bayes_pvalues_<bird_group>_<firstYear>_<lastYear>.csv
 ##
 ## Run this after 1_species_iCAR_2010_2025.R (needs its saved stanfit +
 ## stan_data output). Independent of 2/3, which only use the summary fit.
@@ -44,7 +44,7 @@ library(here)
 here::i_am("1b_posterior_predictive_checks.R")
 
 # Settings (match 1_species_iCAR_2010_2025.R) ------------------------------
-land_cover <- "grasslands"
+bird_group <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2025
 
@@ -65,12 +65,12 @@ spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                    stringsAsFactors = FALSE)
 
 target_spp <- spp_df %>%
-  filter(Group == land_cover, in_bbs == TRUE) %>%
+  filter(Group == bird_group, in_bbs == TRUE) %>%
   distinct(Common.Name, Code, .keep_all = TRUE) %>%
   arrange(Common.Name)
 
 cat("=== Posterior predictive checks ===\n")
-cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
+cat("Group:", bird_group, " | Period:", firstYear, "-", lastYear, "\n")
 cat("Species in group (n =", nrow(target_spp), ")\n")
 
 # Helper: convert species name to file-safe format ---------------------------
@@ -229,7 +229,7 @@ for (i in seq_len(nrow(target_spp))) {
 if (length(pval_list) > 0) {
   pvals_all <- bind_rows(pval_list)
   pval_csv <- file.path(ppc_dir,
-                        paste0("ppc_bayes_pvalues_", land_cover, "_",
+                        paste0("ppc_bayes_pvalues_", bird_group, "_",
                                firstYear, "_", lastYear, ".csv"))
   write.csv(pvals_all, pval_csv, row.names = FALSE)
   cat("\nBayesian p-values written to:", pval_csv, "\n")

@@ -18,21 +18,32 @@
 # per species-per-model-tag), which is what this script requires — the
 # combined all_route_trends_*.csv from 2c (many species AND many models in
 # one file) would NOT work here directly, hence the per-species files.
-# Files also carry a "model" column through unchanged (this script doesn't
-# look at it, just passes it along like every other pre-existing column).
+# Files also carry "group" and "model" columns through unchanged (this
+# script doesn't look at "model", just passes it along like every other
+# pre-existing column; "group" is used below to resolve raster paths, and
+# also carried through so it doesn't need to be re-joined later).
+#
+# Since 1c_species_iCAR_covariates.R / 2c now fit and combine EVERY species
+# across all 12 groups in one run (not one bird_group at a time), this
+# script will encounter files from every group in a single run too, and
+# needs rcp45/rcp85 rasters for whichever groups' species it's asked to
+# process. A missing raster for one species/group is common when only some
+# groups' SDM rasters have been generated so far — this script SKIPS that
+# species (with a warning) rather than aborting the whole run, so it can
+# make progress on whatever groups do have rasters available while you
+# backfill the rest.
 #
 # Workflow (per *_route_trends.csv file):
 #   1. Skip the file if its *_route_trends_sdm.csv output already exists.
-#   2. Read the species code (species_code column, one code per file).
-#   3. Look up that code in data/spp_names_codes_group_aou.csv to get its land
-#      cover group (Group column). The group is resolved per species rather
-#      than hard-coded, so files from any group are handled in one run.
-#   4. Build the rcp45/rcp85 raster paths from the group, which drives both the
+#   2. Read the species code (species_code column, one code per file) and
+#      group (group column, written directly by 2c — no lookup needed).
+#   3. Build the rcp45/rcp85 raster paths from the group, which drives both the
 #      directory (rcp45_<group>/, rcp85_<group>/) and the file name prefix
 #      (<group>_<code>_breeding_2025_<45|85>_ENSEMBLE_classifiedchange.tif).
-#   5. If either the group's raster folder or the species' raster file is
-#      missing, stop with an error identifying what's missing.
-#   6. Otherwise extract raster values at each route's longitude/latitude
+#   4. If either the group's raster folder or the species' raster file is
+#      missing, warn and skip this file (leaves rcp45/rcp85 as NA rather than
+#      writing anything) — does NOT stop the whole run.
+#   5. Otherwise extract raster values at each route's longitude/latitude
 #      (reprojected to the raster CRS) into the rcp45 and rcp85 columns and
 #      write the result to output/species_routes_covariates/per_species_sdm/.
 #
@@ -53,9 +64,6 @@ library(sf)
 
 here::i_am("3c_add_SDM_covariates.R")
 
-# Read species name/code lookup table --------------------------------------
-spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"))
-
 # List all species-per-model route CSVs -------------------------------------
 # (written by 2c_generate_route_trend_csvs_covariates.R)
 species_routes_dir <- here::here("output", "species_routes_covariates", "per_species")
@@ -67,6 +75,8 @@ cat("Found", length(species_files), "species-per-model route files\n\n")
 # Create output directory --------------------------------------------------
 out_dir <- here::here("output", "species_routes_covariates", "per_species_sdm")
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+n_skipped_missing_raster <- 0
 
 # Process each species-per-model file ---------------------------------------
 for (f in species_files) {
@@ -87,20 +97,20 @@ for (f in species_files) {
     next
   }
 
-  # Verify abbreviation exists in lookup table
-  if (!abbr %in% spp_df$Code) {
-    message("WARNING: Code '", abbr, "' not found in spp_names_codes_group_aou.csv — skipping")
+  # Land-cover group is written directly by 2c_generate_route_trend_csvs_covariates.R
+  # (the "group" column) -- no separate lookup needed.
+  if (!"group" %in% names(sp_routes)) {
+    message("WARNING: No 'group' column in ", basename(f),
+            " — re-run 2c_generate_route_trend_csvs_covariates.R to regenerate it. Skipping.")
+    next
+  }
+  bird_group <- unique(sp_routes$group)
+  if (length(bird_group) != 1 || is.na(bird_group) || bird_group == "") {
+    message("WARNING: No unique group value in ", basename(f), " — skipping")
     next
   }
 
-  # Look up this species' land cover group (drives raster dir + file prefix)
-  land_cover <- unique(spp_df$Group[spp_df$Code == abbr])
-  if (length(land_cover) != 1 || is.na(land_cover) || land_cover == "") {
-    message("WARNING: No unique Group for code '", abbr, "' — skipping")
-    next
-  }
-
-  cat("Processing:", abbr, "[", land_cover, "] (", basename(f), ")\n")
+  cat("Processing:", abbr, "[", bird_group, "] (", basename(f), ")\n")
 
   # Initialize new columns
 
@@ -108,29 +118,34 @@ for (f in species_files) {
   sp_routes$rcp85 <- NA
 
   # Build raster directory + file paths
-  rcp45_dir  <- here::here("data", paste0("rcp45_", land_cover))
-  rcp85_dir  <- here::here("data", paste0("rcp85_", land_cover))
+  rcp45_dir  <- here::here("data", paste0("rcp45_", bird_group))
+  rcp85_dir  <- here::here("data", paste0("rcp85_", bird_group))
   rcp45_file <- file.path(rcp45_dir, abbr,
-                          paste0(land_cover, "_", abbr, "_breeding_2025_45_ENSEMBLE_classifiedchange.tif"))
+                          paste0(bird_group, "_", abbr, "_breeding_2025_45_ENSEMBLE_classifiedchange.tif"))
   rcp85_file <- file.path(rcp85_dir, abbr,
-                          paste0(land_cover, "_", abbr, "_breeding_2025_85_ENSEMBLE_classifiedchange.tif"))
+                          paste0(bird_group, "_", abbr, "_breeding_2025_85_ENSEMBLE_classifiedchange.tif"))
 
-  # Require both raster files; stop immediately if either is missing.
+  # Require both raster files; WARN and skip this file (not stop the whole
+  # run) if either is missing -- with ~600 species across 12 groups, it's
+  # expected that only some groups' SDM rasters exist at any given time.
   # Distinguish "whole group folder missing" from "just this species' file
-  # missing" so the error points at the right thing to fix.
+  # missing" so the message points at the right thing to fix.
+  missing_msg <- NULL
   if (!dir.exists(rcp45_dir)) {
-    stop("rcp45 raster folder not found: ", rcp45_dir,
-         " (species ", abbr, ", group '", land_cover, "')")
+    missing_msg <- paste0("rcp45 raster folder not found: ", rcp45_dir,
+                          " (species ", abbr, ", group '", bird_group, "')")
+  } else if (!file.exists(rcp45_file)) {
+    missing_msg <- paste0("rcp45 raster not found for ", abbr, ": ", rcp45_file)
+  } else if (!dir.exists(rcp85_dir)) {
+    missing_msg <- paste0("rcp85 raster folder not found: ", rcp85_dir,
+                          " (species ", abbr, ", group '", bird_group, "')")
+  } else if (!file.exists(rcp85_file)) {
+    missing_msg <- paste0("rcp85 raster not found for ", abbr, ": ", rcp85_file)
   }
-  if (!file.exists(rcp45_file)) {
-    stop("rcp45 raster not found for ", abbr, ": ", rcp45_file)
-  }
-  if (!dir.exists(rcp85_dir)) {
-    stop("rcp85 raster folder not found: ", rcp85_dir,
-         " (species ", abbr, ", group '", land_cover, "')")
-  }
-  if (!file.exists(rcp85_file)) {
-    stop("rcp85 raster not found for ", abbr, ": ", rcp85_file)
+  if (!is.null(missing_msg)) {
+    message("WARNING: ", missing_msg, " — skipping this species/model.")
+    n_skipped_missing_raster <- n_skipped_missing_raster + 1
+    next
   }
 
   # Extract rcp45 values
@@ -163,3 +178,5 @@ for (f in species_files) {
 cat("\n=== SDM extraction done (covariate pipeline) ===\n")
 cat("Output directory:", out_dir, "\n")
 cat("Files written:", length(list.files(out_dir, pattern = "\\.csv$")), "\n")
+cat("Files skipped for missing rcp45/rcp85 rasters:", n_skipped_missing_raster,
+    "(re-run this script once those groups' rasters are available)\n")

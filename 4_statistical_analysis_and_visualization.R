@@ -17,10 +17,10 @@ library(multcompView) # multcompView converts pairwise p-values into compact let
 here::i_am("4_statistical_analysis_and_visualization.R")
 
 # Settings -----------------------------------------------------------------
-land_cover <- "grasslands"   # target group: species are matched to this group
+bird_group <- "grasslands"   # target group: species are matched to this group
                              # via data/spp_names_codes_group_aou.csv (the
                              # per-species CSVs from 3_add_SDM.R are named by
-                             # species, not by land_cover, so filtering by
+                             # species, not by bird_group, so filtering by
                              # group requires this lookup rather than a
                              # filename prefix)
 
@@ -33,12 +33,12 @@ if (!dir.exists(plot_dir))        dir.create(plot_dir,        recursive = TRUE)
 if (!dir.exists(per_species_dir)) dir.create(per_species_dir, recursive = TRUE)
 
 # Species lookup table (Code -> Group), used to resolve each species CSV's
-# land-cover group since the file name itself carries no land_cover prefix.
+# land-cover group since the file name itself carries no bird_group prefix.
 spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv")) %>%
   distinct(Code, Group)
 
 # Read every SDM CSV written by 3_add_SDM.R, then attach each row's land-cover
-# group via species_code so it can be filtered per land_cover below.
+# group via species_code so it can be filtered per bird_group below.
 sdm_files <- list.files(out_dir, pattern = "_route_trends_sdm\\.csv$",
                         full.names = TRUE)
 
@@ -52,15 +52,15 @@ all_sdm_raw <- sdm_files %>%
   map_dfr(read.csv) %>%
   left_join(spp_df, by = c("species_code" = "Code"))
 
-target_sdm <- all_sdm_raw %>% filter(Group == land_cover)
+target_sdm <- all_sdm_raw %>% filter(Group == bird_group)
 
 if (nrow(target_sdm) == 0) {
-  stop("No SDM rows matched land_cover = '", land_cover, "' after joining ",
+  stop("No SDM rows matched bird_group = '", bird_group, "' after joining ",
        "species groups from spp_names_codes_group_aou.csv")
 }
 
 cat("Total rows:", nrow(target_sdm), "\n")
-cat(land_cover, "species:", length(unique(target_sdm$species_code)), "\n")
+cat(bird_group, "species:", length(unique(target_sdm$species_code)), "\n")
 
 # Build combined analysis data ---------------------------------------------
 analysis_45 <- target_sdm %>%
@@ -279,7 +279,7 @@ make_violin_cld <- function(df45, df85, group, group_levels,
 # PART 1: All 8 SDM categories (0-7) — all species ####
 # ==========================================================================
 
-stats_file_8cat <- file.path(stats_dir, paste0(land_cover, "_category_stats_8categories.txt"))
+stats_file_8cat <- file.path(stats_dir, paste0(bird_group, "_category_stats_8categories.txt"))
 sink(stats_file_8cat)
 
 cat("\n##################################################\n")
@@ -296,12 +296,12 @@ cat("Saved Part 1 (all-species 8-category) statistics to:", stats_file_8cat, "\n
 make_violin_cld(
   analysis_45, analysis_85,
   group = "category", group_levels = cat8_levels,
-  title = paste0("All ", land_cover, " species combined"),
+  title = paste0("All ", bird_group, " species combined"),
   subtitle = paste0(nrow(target_sdm), " route-species observations across ",
                     length(unique(target_sdm$route)), " unique routes and ",
                     length(unique(target_sdm$species_code)), " species"),
   x_lab = "SDM classified change category",
-  file_name = paste0(land_cover, "_ALL_species_trend_by_rcp_cld.png")
+  file_name = paste0(bird_group, "_ALL_species_trend_by_rcp_cld.png")
 )
 
 
@@ -310,7 +310,7 @@ make_violin_cld(
 # ==========================================================================
 
 stats_file_species_8cat <- file.path(stats_dir,
-                                      paste0(land_cover, "_category_stats_by_species_8categories.txt"))
+                                      paste0(bird_group, "_category_stats_by_species_8categories.txt"))
 sink(stats_file_species_8cat)
 
 cat("\n##################################################\n")
@@ -349,11 +349,11 @@ for (sp in target_species_list) {
   make_violin_cld(
     sp_45, sp_85,
     group = "category", group_levels = cat8_levels,
-    title = paste0(sp_name, " (", sp, ") (group:", land_cover, ")"),
+    title = paste0(sp_name, " (", sp, ") (group:", bird_group, ")"),
     subtitle = paste0("n = ", nrow(sp_45), " (RCP4.5), ",
                       nrow(sp_85), " (RCP8.5) route observations"),
     x_lab = "SDM classified change category",
-    file_name = paste0(land_cover, "_", sp, "_trend_by_rcp_cld.png"),
+    file_name = paste0(bird_group, "_", sp, "_trend_by_rcp_cld.png"),
     dir = per_species_dir
   )
 }
@@ -363,7 +363,7 @@ for (sp in target_species_list) {
 # PART 3: Grouped categories (Contraction/Stable/Expansion) — all species ####
 # ==========================================================================
 
-stats_file_grp <- file.path(stats_dir, paste0(land_cover, "_category_stats_grouped.txt"))
+stats_file_grp <- file.path(stats_dir, paste0(bird_group, "_category_stats_grouped.txt"))
 sink(stats_file_grp)
 
 cat("\n##################################################\n")
@@ -382,12 +382,12 @@ cat("Saved Part 3 (all-species grouped) statistics to:", stats_file_grp, "\n")
 make_violin_cld(
   analysis_45_grp, analysis_85_grp,
   group = "change_group", group_levels = grp_levels,
-  title = paste0("All ", land_cover, " species combined"),
+  title = paste0("All ", bird_group, " species combined"),
   subtitle = paste0(nrow(target_sdm), " route-species observations across ",
                     length(unique(target_sdm$route)), " unique routes and ",
                     length(unique(target_sdm$species_code)), " species"),
   x_lab = "Range change group",
-  file_name = paste0(land_cover, "_ALL_species_trend_by_group_cld.png")
+  file_name = paste0(bird_group, "_ALL_species_trend_by_group_cld.png")
 )
 
 
@@ -396,7 +396,7 @@ make_violin_cld(
 # ==========================================================================
 
 stats_file_species_grp <- file.path(stats_dir,
-                                     paste0(land_cover, "_category_stats_by_species_grouped.txt"))
+                                     paste0(bird_group, "_category_stats_by_species_grouped.txt"))
 sink(stats_file_species_grp)
 
 cat("\n##################################################\n")
@@ -436,18 +436,18 @@ for (sp in target_species_list) {
   make_violin_cld(
     sp_45, sp_85,
     group = "change_group", group_levels = grp_levels,
-    title = paste0(sp_name, " (", sp, ") (group:", land_cover, ")"),
+    title = paste0(sp_name, " (", sp, ") (group:", bird_group, ")"),
     subtitle = paste0("n = ", nrow(sp_45), " (RCP4.5), ",
                       nrow(sp_85), " (RCP8.5) route observations"),
     x_lab = "Range change group",
-    file_name = paste0(land_cover, "_", sp, "_trend_by_group_cld.png"),
+    file_name = paste0(bird_group, "_", sp, "_trend_by_group_cld.png"),
     dir = per_species_dir
   )
 }
 
 
 # ==========================================================================
-# PART 5: ALL land covers combined (ignore land_cover filter) ####
+# PART 5: ALL land covers combined (ignore bird_group filter) ####
 #   Pools every *_route_trends_sdm.csv in out_dir, across every land-cover
 #   group present in spp_names_codes_group_aou.csv (e.g. grasslands and
 #   aridlands), into one dataset for the all-species 8-category and grouped
@@ -461,10 +461,10 @@ cat("\nCombining all species SDM files across ALL land covers...\n")
 if (nrow(all_sdm_raw) == 0) {
   warning("No SDM CSVs found in ", out_dir, " for the all-land-cover analysis.")
 } else {
-  all_sdm <- all_sdm_raw %>% rename(land_cover = Group)
+  all_sdm <- all_sdm_raw %>% rename(bird_group = Group)
 
-  land_covers_used <- sort(unique(all_sdm$land_cover))
-  cat("Land covers:", paste(land_covers_used, collapse = ", "), "\n")
+  bird_groups_used <- sort(unique(all_sdm$bird_group))
+  cat("Land covers:", paste(bird_groups_used, collapse = ", "), "\n")
   cat("Total rows:", nrow(all_sdm), "\n")
   cat("Species:", length(unique(all_sdm$species_code)), "\n")
 
@@ -496,7 +496,7 @@ if (nrow(all_sdm_raw) == 0) {
 
   cat("\n##################################################\n")
   cat("# PART 5: All 8 SDM categories (0-7) — all species, ALL land covers\n")
-  cat("#   Land covers pooled:", paste(land_covers_used, collapse = ", "), "\n")
+  cat("#   Land covers pooled:", paste(bird_groups_used, collapse = ", "), "\n")
   cat("#   Response: trend (Trend)\n")
   cat("##################################################\n")
 
@@ -513,7 +513,7 @@ if (nrow(all_sdm_raw) == 0) {
     subtitle = paste0(nrow(all_sdm), " route-species observations across ",
                       length(unique(all_sdm$route)), " unique routes, ",
                       length(unique(all_sdm$species_code)), " species, and ",
-                      length(land_covers_used), " land covers"),
+                      length(bird_groups_used), " land covers"),
     x_lab = "SDM classified change category",
     file_name = paste0(lc_tag, "_ALL_species_trend_by_rcp_cld.png")
   )
@@ -527,7 +527,7 @@ if (nrow(all_sdm_raw) == 0) {
   cat("# PART 5: Grouped categories — all species, ALL land covers\n")
   cat("#   Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7\n")
   cat("#   (category 0 = never suitable, excluded)\n")
-  cat("#   Land covers pooled:", paste(land_covers_used, collapse = ", "), "\n")
+  cat("#   Land covers pooled:", paste(bird_groups_used, collapse = ", "), "\n")
   cat("#   Response: trend (Trend)\n")
   cat("##################################################\n")
 
@@ -544,7 +544,7 @@ if (nrow(all_sdm_raw) == 0) {
     subtitle = paste0(nrow(all_sdm), " route-species observations across ",
                       length(unique(all_sdm$route)), " unique routes, ",
                       length(unique(all_sdm$species_code)), " species, and ",
-                      length(land_covers_used), " land covers"),
+                      length(bird_groups_used), " land covers"),
     x_lab = "Range change group",
     file_name = paste0(lc_tag, "_ALL_species_trend_by_group_cld.png")
   )
