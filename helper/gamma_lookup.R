@@ -52,17 +52,26 @@ species_to_f <- function(sp) {
 
 #' Read one species/model's *_summ_fit.rds and pull out its gamma1 row
 #' verbatim (every column posterior::summarise_draws() produced), tagged
-#' with species/model/file for identification. Returns NULL (with a message)
-#' if the file is missing or has no gamma1 row, instead of erroring, so a
-#' batch loop can skip cleanly.
+#' with species/model/file for identification. Also attaches WHOLE-MODEL
+#' convergence diagnostics -- model_max_rhat / model_min_ess_bulk, computed
+#' across EVERY parameter in the fit (alpha, beta, gamma1, everything), not
+#' just gamma1 -- plus model_converged, a pass/fail flag using the criterion
+#' "species are accepted in models converged based on Rhat < 1.01 and bulk
+#' effective sample sizes > 400". This is a stricter, more complete check
+#' than looking at gamma1's own rhat/ess alone: a species can have a
+#' perfectly converged gamma1 while alpha or beta elsewhere is still poorly
+#' converged, and this criterion is meant to catch that too. Returns NULL
+#' (with a message) if the file is missing or has no gamma1 row, instead of
+#' erroring, so a batch loop can skip cleanly.
 #'
 #' @param species_f file-safe species name, e.g. "Bairds_Sparrow" (matches
 #'   the species_to_f() naming used by 1c/2c)
-#' @param tag covariate model tag, e.g. "grassland_habitat" or "wetlands"
+#' @param tag covariate model tag, e.g. "anthro"
 #' @param firstYear,lastYear must match the summ_fit.rds filename
 #' @param rds_dir directory containing the *_summ_fit.rds files
 #' @return a one-row data.frame (gamma1's full summary row + species_f/tag/
-#'   file columns), or NULL if unavailable
+#'   file/model_max_rhat/model_min_ess_bulk/model_converged columns), or NULL
+#'   if unavailable
 gamma_lookup <- function(species_f, tag, firstYear = 2010, lastYear = 2025,
                           rds_dir = here::here("output", "rds")) {
   summ_file <- file.path(rds_dir,
@@ -75,6 +84,14 @@ gamma_lookup <- function(species_f, tag, firstYear = 2010, lastYear = 2025,
 
   summ <- readRDS(summ_file)
 
+  # Whole-model convergence -- computed across EVERY parameter in summ (same
+  # max(rhat)/min(ess_bulk) logic 1c_species_iCAR_covariates.R's own console
+  # diagnostics use), BEFORE narrowing down to just the gamma1 row below.
+  model_max_rhat     <- suppressWarnings(max(summ$rhat, na.rm = TRUE))
+  model_min_ess_bulk <- suppressWarnings(min(summ$ess_bulk, na.rm = TRUE))
+  model_converged <- is.finite(model_max_rhat) && is.finite(model_min_ess_bulk) &&
+    model_max_rhat < 1.01 && model_min_ess_bulk > 400
+
   gamma_row <- summ[summ$variable == "gamma1", ]
   if (nrow(gamma_row) == 0) {
     message("  [NO gamma1] ", basename(summ_file))
@@ -84,6 +101,9 @@ gamma_lookup <- function(species_f, tag, firstYear = 2010, lastYear = 2025,
   gamma_row$species_f <- species_f
   gamma_row$model     <- tag
   gamma_row$file       <- basename(summ_file)
+  gamma_row$model_max_rhat     <- model_max_rhat
+  gamma_row$model_min_ess_bulk <- model_min_ess_bulk
+  gamma_row$model_converged    <- model_converged
 
   # species_f/model/file first, then whatever summarise_draws() columns exist
   gamma_row %>% select(species_f, model, file, everything(), -variable)
@@ -154,12 +174,22 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
   # different default measure set.
   preferred_order <- c("species", "species_code", "model",
                        "mean", "median", "sd", "mad", "q5", "q95",
-                       "rhat", "ess_bulk", "ess_tail")
+                       "rhat", "ess_bulk", "ess_tail",
+                       "model_max_rhat", "model_min_ess_bulk", "model_converged")
   gamma_table <- gamma_table %>%
     select(any_of(preferred_order), everything())
 
   cat("\n=== gamma1 table ===\n")
-  print(gamma_table, n = Inf, width = Inf)
+  # print.data.frame()'s internal print.default(m, ...) call errors with
+  # "invalid 'na.print' specification" if getOption("na.print") has been set
+  # to something invalid elsewhere in the session (seen in practice here --
+  # not a bug in this table itself). Reset it to a known-good value just for
+  # this print call, then restore whatever it was, so this is defensive
+  # regardless of what else in the session touched it.
+  old_na_print <- getOption("na.print")
+  options(na.print = "NA")
+  print(as.data.frame(gamma_table))
+  options(na.print = old_na_print)
 
   cat("\n=== Quick summary ===\n")
   if (all(c("mean", "median") %in% names(gamma_table))) {
@@ -184,11 +214,30 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
                       .groups = "drop"))
   }
 
-  if ("rhat" %in% names(gamma_table)) {
-    cat("\nSpecies with gamma1 rhat > 1.01 (possible convergence concern), by model:\n")
+  # Whole-model convergence check -- NOT gamma1's own rhat/ess (that's the
+  # separate, narrower gamma1-specific diagnostic already shown above via
+  # rhat/ess_bulk/ess_tail). This applies the criterion "species are accepted
+  # in models converged based on Rhat < 1.01 and bulk effective sample sizes
+  # > 400" to the WORST rhat and LOWEST ess_bulk found across every parameter
+  # in the fit -- so a species fails here if ANY parameter (alpha, beta,
+  # gamma1, anything) is still poorly converged, even if gamma1 itself looks
+  # fine. NOTE: like the rest of this table, this only covers non-"base"
+  # model tags (base has no gamma1 row to key off of) -- base-model
+  # convergence isn't checked here.
+  if (all(c("model_max_rhat", "model_min_ess_bulk", "model_converged") %in% names(gamma_table))) {
+    cat("\nSpecies FAILING whole-model convergence (Rhat < 1.01 and bulk ESS > 400",
+        "required across every parameter), by model:\n")
     print(gamma_table %>%
-            filter(rhat > 1.01) %>%
-            select(species, species_code, model, rhat, any_of(c("ess_bulk", "ess_tail"))))
+            filter(!model_converged) %>%
+            select(species, species_code, model, model_max_rhat, model_min_ess_bulk))
+
+    cat("\nWhole-model convergence summary, by model:\n")
+    print(gamma_table %>%
+            group_by(model) %>%
+            summarise(n_species   = n(),
+                      n_converged = sum(model_converged, na.rm = TRUE),
+                      n_failed    = sum(!model_converged, na.rm = TRUE),
+                      .groups = "drop"))
   }
 
   if (write_csv) {

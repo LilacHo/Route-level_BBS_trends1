@@ -77,8 +77,13 @@ library(concaveman)
 library(here)
 
 here::i_am("1c_species_iCAR_covariates.R")
-source("functions/neighbours_define_voronoi.R")
-source("functions/posterior_summary_functions.R")
+
+# prepare_species_data() and fit_one_covariate_model() -- and the
+# neighbours_define_voronoi()/posterior_summary_functions.R sources they
+# depend on -- now live in functions/covariate_model_fitting.R, shared with
+# 1d_refit_nonconverged_species.R and tests/test_green_heron_debug.R so
+# there is exactly one implementation instead of three hand-kept copies.
+source(here::here("functions", "covariate_model_fitting.R"))
 
 # Ensure cmdstanr writes output to CSV (default) and set output_dir for temp
 # files. Each species/model_tag combo gets its own subfolder under here
@@ -112,20 +117,10 @@ if (!dir.exists(here::here("data", "stan_data"))) dir.create(here::here("data", 
 route_info_dir <- here::here("data", "route_info")
 if (!dir.exists(route_info_dir)) dir.create(route_info_dir, recursive = TRUE)
 
-# Covariate loader ----------------------------------------------------------
-# One row per route per year; build a "<StateNum>-<Route>" key to match
-# new_data$route below. check.names = FALSE preserves value_col exactly as
-# it appears in the CSV header. out_name becomes both the joined column name
-# in new_data AND the model_tag used to select it in
-# fit_one_covariate_model() (see below).
-load_covariate <- function(file, value_col, out_name) {
-  read.csv(here::here("data", file), stringsAsFactors = FALSE, check.names = FALSE) %>%
-    transmute(route_key = paste(StateNum, Route, sep = "-"),
-              year      = year,
-              !!out_name := .data[[value_col]]) %>%
-    filter(!is.na(.data[[out_name]])) %>%
-    distinct(route_key, year, .keep_all = TRUE)
-}
+# load_covariate() now comes from functions/covariate_model_fitting.R --
+# one row per route per year; builds a "<StateNum>-<Route>" key to match
+# new_data$route below. out_name becomes both the joined column name in
+# new_data AND the model_tag used to select it in fit_one_covariate_model().
 
 # Load one covariate per the spec above, optionally rescaling by its own
 # observed max. Kept as a thin wrapper (rather than calling load_covariate()
@@ -165,10 +160,7 @@ cat("=== Full run: ", nrow(target_spp), " species x ", length(model_tags),
     " models (", paste(model_tags, collapse = ", "), ") ===\n", sep = "")
 cat("Groups represented:", paste(sort(unique(target_spp$Group)), collapse = ", "), "\n")
 
-# Helper: convert species name to file-safe format ------------------------
-species_to_f <- function(sp) {
-  gsub("'", "", gsub(" ", "_", sp, fixed = TRUE), fixed = TRUE)
-}
+# species_to_f() now comes from functions/covariate_model_fitting.R
 
 # Compile the Stan models once (reused across every species) ---------------
 model_base   <- cmdstan_model("models/slope_iCAR_route_NB_New.stan",
@@ -184,267 +176,24 @@ for (cn in setdiff(model_tags, "base")) {
   covariate_lookups[[cn]] <- load_group_covariate(spec$file, spec$value_col, cn, spec$rescale)
 }
 
-# ==========================================================================
-# Function: data-prep pipeline for one species (BBS data, covariate join,
-# NA-drop, spatial neighbours). Generalized to an arbitrary NAMED LIST of
-# covariate lookups (currently just "anthro") instead of a fixed signature,
-# so this still supports adding another covariate back later without
-# restructuring. Shared across both model tags for a species so they fit on
-# identical data.
-# ==========================================================================
-prepare_species_data <- function(species, species_bbs, strat,
-                                 firstYear, lastYear, covariate_lookups) {
-
-  cat("    Preparing data for:", species, "\n")
-
-  # BBS data ---------------------------------------------------------------
-  data_pkg <- bbsBayes2::stratify(by = strat, species = species_bbs,
-                                  use_map = FALSE) %>%
-    bbsBayes2::prepare_data(min_year = firstYear,
-                            max_year = lastYear,
-                            min_n_routes = 1,
-                            min_max_route_years = 1)
-
-  raw_data <- data_pkg[["raw_data"]]
-  strata_map <- load_map(strat)
-
-  # Continental US only -- the land-cover covariate CSVs only cover the
-  # continental US, and state_num == 3 is excluded there too.
-  raw_data <- raw_data %>%
-    filter(country_num == 840) %>%
-    filter(state_num != 3)
-
-  new_data <- data.frame(
-    strat_name = raw_data$strata_name,
-    strat      = raw_data$strata,
-    route      = raw_data$route,
-    latitude   = raw_data$latitude,
-    longitude  = raw_data$longitude,
-    count      = raw_data$count,
-    year       = raw_data$year_num,
-    firstyr    = raw_data$first_year,
-    ObsN       = raw_data$observer,
-    r_year     = raw_data$year
-  )
-
-  if (nrow(new_data) < 50) {
-    stop("Too few observations (", nrow(new_data), ")")
-  }
-
-  # Join every covariate by route + calendar year ---------------------------
-  n_before <- nrow(new_data)
-  cov_names <- names(covariate_lookups)
-  for (cn in cov_names) {
-    new_data <- new_data %>%
-      left_join(covariate_lookups[[cn]], by = c("route" = "route_key", "r_year" = "year"))
-  }
-
-  match_rate <- mean(complete.cases(new_data[, cov_names, drop = FALSE]))
-  cat("    Covariate match rate (all of", paste(cov_names, collapse = ", "), "present):",
-      round(100 * match_rate, 1), "%\n")
-
-  cat("    Sample new_data$route values:      ",
-      paste(head(unique(new_data$route), 6), collapse = ", "), "\n")
-  cat("    Sample covariate route_key values: ",
-      paste(head(unique(covariate_lookups[[cov_names[1]]]$route_key), 6), collapse = ", "), "\n")
-
-  if (match_rate < 0.5) {
-    stop("Less than half of observations matched all of ", paste(cov_names, collapse = ", "),
-         " for ", species, " — new_data$route doesn't look like '<StateNum>-<Route>'. ",
-         "Compare the sample values printed above. This previously happened because strat ",
-         "was 'bbs_usgs' instead of 'bcr'; if strat is already 'bcr', check the ",
-         "continental-US filter and the key construction in load_covariate() instead.")
-  }
-
-  # Drop rows missing anthro -- same reduced-dataset principle used
-  # throughout this project, so both model tags (including "base") fit on
-  # identical rows.
-  new_data <- new_data %>% filter(complete.cases(new_data[, cov_names, drop = FALSE]))
-  n_dropped <- n_before - nrow(new_data)
-  cat("    Dropped", n_dropped, "of", n_before,
-      "observations with missing covariate data\n")
-
-  if (nrow(new_data) < 50) {
-    stop("Too few observations after dropping missing-covariate rows (",
-         nrow(new_data), ")")
-  }
-
-  realized_strata_map <- strata_map %>%
-    filter(strata_name %in% unique(new_data$strat_name))
-
-  # Spatial neighbours -----------------------------------------------------
-  new_data$routeF <- as.integer(factor(new_data$route))
-
-  route_map <- unique(data.frame(
-    route     = new_data$route,
-    routeF    = new_data$routeF,
-    strat     = new_data$strat_name,
-    latitude  = new_data$latitude,
-    longitude = new_data$longitude
-  ))
-
-  dups <- which(duplicated(route_map[, c("latitude", "longitude")]))
-  while (length(dups) > 0) {
-    route_map[dups, "latitude"]  <- route_map[dups, "latitude"]  + 0.01
-    route_map[dups, "longitude"] <- route_map[dups, "longitude"] + 0.01
-    dups <- which(duplicated(route_map[, c("latitude", "longitude")]))
-  }
-
-  route_map <- st_as_sf(route_map, coords = c("longitude", "latitude"))
-  st_crs(route_map) <- 4326
-  route_map <- st_transform(route_map, crs = st_crs(strata_map))
-
-  car_stan_dat <- neighbours_define_voronoi(
-    real_point_map  = route_map,
-    species         = species,
-    strat_indicator = "routeF",
-    strata_map      = realized_strata_map,
-    concavity       = 1,
-    save_plot_data  = TRUE,
-    plot_dir        = here::here("data", "maps")
-  )
-
-  cat("    Routes:", max(new_data$routeF),
-      " | Obs:", nrow(new_data),
-      " | Edges:", car_stan_dat$N_edges, "\n")
-
-  tmp <- data.frame(route = new_data$routeF, count = new_data$count) %>%
-    group_by(route) %>%
-    summarise(mean_count = mean(log(count + 1)))
-  sd_alpha_prior <- sd(tmp$mean_count)
-
-  base_stan_data <- list(
-    count      = new_data$count,
-    ncounts    = nrow(new_data),
-    strat      = new_data$strat,
-    route      = new_data$routeF,
-    year       = new_data$year,
-    firstyr    = new_data$firstyr,
-    fixedyear  = floor(mean(1:max(new_data$year))),
-    nyears     = max(new_data$year),
-    observer   = as.integer(factor(new_data$ObsN)),
-    nobservers = length(unique(new_data$ObsN)),
-    N_edges    = car_stan_dat$N_edges,
-    node1      = car_stan_dat$node1,
-    node2      = car_stan_dat$node2,
-    nroutes    = max(new_data$routeF),
-    sd_alpha_prior = sd_alpha_prior
-  )
-
-  if (car_stan_dat$N != base_stan_data[["nroutes"]]) {
-    stop("Some routes are missing from adjacency matrix")
-  }
-
-  list(new_data = new_data, route_map = route_map,
-       realized_strata_map = realized_strata_map, car_stan_dat = car_stan_dat,
-       sd_alpha_prior = sd_alpha_prior, base_stan_data = base_stan_data,
-       n_dropped = n_dropped)
-}
-
-# ==========================================================================
-# Function: fit one model_tag ("base" or "anthro") for one species, given
-# the shared prepared data from prepare_species_data(). Returns a one-row
-# diagnostics data.frame (or NULL on failure, handled by the caller).
-# ==========================================================================
-fit_one_covariate_model <- function(species, species_f, model_tag, prepped,
-                                    firstYear, lastYear) {
-
-  new_data       <- prepped$new_data
-  base_stan_data <- prepped$base_stan_data
-
-  if (model_tag == "base") {
-    stan_model <- model_base
-    stan_data  <- base_stan_data
-  } else {
-    if (!model_tag %in% names(new_data)) {
-      stop("model_tag '", model_tag, "' has no matching covariate column in new_data — ",
-           "check covariate_specs.")
-    }
-    stan_model <- model_single
-    stan_data  <- c(base_stan_data, list(covariate = new_data[[model_tag]]))
-  }
-
-  cat("    Fitting model:", model_tag, "\n")
-
-  # Per-species/model_tag output subfolder so raw cmdstan CSVs stay isolated
-  # and can be deleted right after this fit is saved to .rds.
-  run_output_dir <- file.path(cmdstanr_output_dir, paste0(species_f, "_", model_tag))
-  if (!dir.exists(run_output_dir)) dir.create(run_output_dir, recursive = TRUE)
-
-  stanfit <- stan_model$sample(
-    data = stan_data,
-    refresh = 400,
-    chains = 4, iter_sampling = 2000, iter_warmup = 2000,
-    parallel_chains = 4,
-    adapt_delta = 0.8,
-    max_treedepth = 10,
-    show_exceptions = FALSE,
-    output_dir = run_output_dir
-  )
-
-  summ <- stanfit$summary()
-  fit_time <- round(stanfit$time()[["total"]] / 60, 1)
-  cat("    Fit time:", fit_time, "minutes\n")
-
-  out_base <- paste0(species_f, "_iCAR_", model_tag, "_", firstYear, "_", lastYear)
-  stanfit$save_object(file.path(rds_dir, paste0(out_base, "_stanfit.rds")))
-  saveRDS(summ, file.path(rds_dir, paste0(out_base, "_summ_fit.rds")))
-
-  # Lightweight route lookup (route, routeF, latitude, longitude) — saved on
-  # its own, before cleanup below, so 2c can get what it needs without
-  # depending on the full stan_data.RData save further down. Skip if a file
-  # of the same name already exists.
-  route_info_file <- file.path(route_info_dir,
-                               paste0(species_f, "_", model_tag, "_",
-                                      firstYear, "_", lastYear, "_route_info.rds"))
-  if (!file.exists(route_info_file)) {
-    route_info <- new_data %>% distinct(route, routeF, latitude, longitude)
-    saveRDS(route_info, route_info_file)
-  }
-
-  # Raw per-chain CSVs are no longer needed once the fit is saved above —
-  # delete them now instead of letting them accumulate in %TEMP%.
-  unlink(run_output_dir, recursive = TRUE)
-
-  sp_data_file <- here::here("data", "stan_data",
-                             paste0(species_f, "_", model_tag, "_",
-                                    firstYear, "_", lastYear, "_stan_data.RData"))
-  save(list = c("stan_data", "new_data", "model_tag"), file = sp_data_file)
-
-  # Convergence diagnostics + covariate effect -------------------------------
-  max_rhat <- max(summ$rhat, na.rm = TRUE)
-  min_ess  <- min(summ$ess_bulk, na.rm = TRUE)
-
-  gamma1_mean <- if ("gamma1" %in% summ$variable) {
-    summ$mean[summ$variable == "gamma1"]
-  } else {
-    NA_real_
-  }
-
-  cat("    Max Rhat:", round(max_rhat, 4),
-      " | Min ESS:", round(min_ess, 0),
-      if (!is.na(gamma1_mean)) paste(" | gamma1:", round(gamma1_mean, 4)) else "",
-      "\n")
-
-  data.frame(
-    species     = species,
-    model       = model_tag,
-    max_rhat    = round(max_rhat, 4),
-    min_ess     = round(min_ess, 0),
-    gamma1_mean = round(gamma1_mean, 4),
-    n_obs       = nrow(new_data),
-    n_dropped_missing_cov = prepped$n_dropped,
-    fit_min     = fit_time
-  )
-}
+# prepare_species_data() and fit_one_covariate_model() now come from
+# functions/covariate_model_fitting.R (see source() call near the top of
+# this script) -- previously defined inline here, now shared with
+# 1d_refit_nonconverged_species.R and tests/test_green_heron_debug.R.
 
 # ==========================================================================
 # Main loop: every species, both model tags. Flat -- no per-group looping
 # anymore, since anthro applies the same way to every species regardless of
 # its Group.
 # ==========================================================================
+# Hardcoded into this script's own flow (not optional/manual): both
+# gamma_lookup_table() (gamma1's own posterior summary + credibility) and
+# model_convergence_table() (whole-model Rhat/ESS pass-fail, base included)
+# are ALWAYS run at the end of this script, right after the main loop below.
 gamma_lookup_skip_autorun <- TRUE
 source(here::here("helper", "gamma_lookup.R"))
+model_convergence_skip_autorun <- TRUE
+source(here::here("helper", "model_convergence.R"))
 
 results_list <- list()
 diagnostics_list <- list()
@@ -494,8 +243,13 @@ for (i in seq_len(nrow(target_spp))) {
 
     diagnostics <- tryCatch(
       fit_one_covariate_model(species = sp, species_f = sp_f, model_tag = tag,
-                              prepped = prepped, firstYear = firstYear,
-                              lastYear = lastYear),
+                              prepped = prepped, firstYear = firstYear, lastYear = lastYear,
+                              model_base = model_base, model_single = model_single,
+                              rds_dir = rds_dir, route_info_dir = route_info_dir,
+                              cmdstanr_output_dir = cmdstanr_output_dir,
+                              chains = 4, iter_warmup = 2000, iter_sampling = 2000,
+                              adapt_delta = 0.8, max_treedepth = 10,
+                              show_exceptions = FALSE),
       error = function(e) {
         message("  [ERROR] Model '", tag, "' failed for ", sp, ": ", conditionMessage(e))
         return(NULL)
@@ -533,10 +287,17 @@ if (length(diagnostics_list) > 0) {
   cat("\nDiagnostics written to:", diag_csv, "\n")
 }
 
-# gamma1 lookup table across every species -----------------------------------
+# gamma1 lookup table across every species (non-base tags only) --------------
 gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
                    firstYear = firstYear, lastYear = lastYear,
                    rds_dir = rds_dir, bird_group = "all_species_anthro")
+
+# Whole-model convergence table across every species AND every tag,
+# including "base" -- Rhat < 1.01 and bulk ESS > 400 required across every
+# parameter, not just gamma1 (see helper/model_convergence.R).
+model_convergence_table(target_spp = target_spp, model_tags = model_tags,
+                        firstYear = firstYear, lastYear = lastYear,
+                        rds_dir = rds_dir, bird_group = "all_species_anthro")
 
 cat("\n\n=== DONE ===\n")
 cat("Species x model fits this run:", length(results_list), "\n")
