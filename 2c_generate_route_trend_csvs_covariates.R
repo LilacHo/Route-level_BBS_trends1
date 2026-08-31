@@ -1,73 +1,29 @@
 ## =============================================================================
-## Combine per-route trend output across ALL fitted models into one giant CSV,
-## for cross-model comparison.
-## Time period: 2010-2025
+## 2c_generate_route_trend_csvs_covariates.R
 ##
-## Combines FOUR "model" sources per species, all fit by
-## 1c_species_iCAR_covariates.R on the SAME covariate-reduced dataset (so
-## they're directly comparable to each other): "base" (no covariates),
-## "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro".
-## All three non-base models are single-covariate fits (there is no joint
-## two-covariate model in this design — "grassland_anthro" here is a single
-## pre-composited covariate, Developed*+CultivatedCrops, not grassland and
-## anthro fit together).
+## Post-processing only, no fitting. Converts the raw alpha/beta posteriors
+## from 1c into interpretable per-route trend estimates, for all four model
+## tags (base, grassland_habitat, grassland_anthro,
+## grassland_habitat_to_anthro), and combines them into single CSVs across
+## every species.
 ##
-## NOTE: "base" here is 1c's own no-covariate refit on the reduced dataset —
-## NOT the full-dataset base fit from 1_species_iCAR_2010_2025.R /
-## 2_generate_route_trend_csvs.R. That full-dataset fit uses more routes and
-## is intentionally not comparable to the covariate models, so it is not
-## included in this combined file.
+## Input: output/rds/*_summ_fit.rds and data/route_info/*_route_info.rds
+## (both from 1c), data/spp_names_codes_group_aou.csv.
 ##
-## For all four models, reads the summary fit + lightweight route lookup
-## saved by 1c_species_iCAR_covariates.R:
-##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
-##   data/route_info/<species>_<tag>_<firstYear>_<lastYear>_route_info.rds
-##     (route, routeF, latitude, longitude only — NOT the full stan_data.RData,
-##     which also exists but isn't needed here)
-## and derives the same per-route quantities as 2_generate_route_trend_csvs.R
-## (trend, trend_lci, trend_uci, rel_abundance from beta/alpha).
+## Output:
+##   - output/species_routes_covariates/all_route_trends_grasslands_*.csv
+##     (one row per route x species x model: alpha, beta, trend, trend_lci,
+##     trend_uci, rel_abundance)
+##   - output/species_routes_covariates/all_model_level_summary_grasslands_*.csv
+##     (one row per species x model: gamma1 + its 90% CI)
+##   - output/species_routes_covariates/per_species/<species>_<tag>_route_trends.csv
+##     (same per-route data, split one file per species x model tag -- this
+##     is what 3c reads)
 ##
-## Writes TWO combined CSVs across every species and every model:
-##
-##   1) Per-route file — one row per route/species/model:
-##      output/species_routes_covariates/all_route_trends_<land_cover>_<firstYear>_<lastYear>.csv
-##      columns: species, species_code, model, route, latitude, longitude,
-##               alpha, beta, trend, trend_lci, trend_uci, rel_abundance
-##
-##   2) Model-level file — one row per species/model (NOT per route), for
-##      quantities that are constant across a species' routes:
-##      output/species_routes_covariates/all_model_level_summary_<land_cover>_<firstYear>_<lastYear>.csv
-##      columns: species, species_code, model, n_routes, gamma1, gamma1_lci,
-##               gamma1_uci, gamma1_excludes_zero
-##
-## gamma1 is the covariate effect on log(lambda) — a single value per
-## species+model, not per-route, which is why it lives in the separate
-## model-level file rather than being repeated down every route row. It is
-## NA (all four gamma1* columns) for the "base" model (no covariate).
-##
-## gamma1_lci/gamma1_uci are the 5th/95th posterior percentiles (q5/q95) of
-## gamma1 — i.e. a 90% credible interval, on the same log(lambda) scale as
-## gamma1 itself (no exp() transform, unlike trend_lci/trend_uci). This
-## mirrors how beta's 90% CI is pulled from summ's q5/q95 columns below.
-## gamma1_excludes_zero is TRUE when that 90% CI does not span zero (the
-## "credible effect" criterion described in the manuscript Methods).
-##
-## ALSO writes ONE per-route CSV per species-per-model (same route_trends
-## data as above, just split apart instead of combined), so it can be fed to
-## 3c_add_SDM_covariates.R the same way 2_generate_route_trend_csvs.R's
-## per-species CSVs feed 3_add_SDM.R — that script requires exactly one
-## species_code per input file, which the single combined CSV above doesn't
-## satisfy:
-##   output/species_routes_covariates/per_species/<species>_<model_tag>_route_trends.csv
-##   columns: species, species_code, model, route, latitude, longitude,
-##            alpha, beta, trend, trend_lci, trend_uci, rel_abundance
-## (same columns as the combined per-route file, including "model", which
-## 3c_add_SDM_covariates.R/4c_statistical_analysis_and_visualization_covariates.R
-## just carry through unchanged since they have no model-specific logic.)
-##
-## This is a post-processing / combination step only; it does not fit or
-## re-derive anything beyond what 2_generate_route_trend_csvs.R and
-## 1c_species_iCAR_covariates.R already produced.
+## trend = 100 * (exp(beta) - 1) (annual % change; trend_lci/trend_uci are
+## the same transform on the posterior's 5th/95th percentiles).
+## rel_abundance = exp(alpha) (expected count at the fixed mid-series year).
+## gamma1_excludes_zero is TRUE when its 90% CI doesn't span zero.
 ## =============================================================================
 
 library(tidyverse)
@@ -75,15 +31,15 @@ library(here)
 
 here::i_am("2c_generate_route_trend_csvs_covariates.R")
 
-# Settings (match 1c_species_iCAR_covariates.R) ----------------------------
+# Settings (match 1c_species_iCAR_covariates_grasslands.R) -----------------
 land_cover <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2025
 model_tags <- c("base", "grassland_habitat", "grassland_anthro", "grassland_habitat_to_anthro")
 
 output_dir       <- here::here("output")
-rds_dir          <- here::here("output", "rds")         # matches 1c_species_iCAR_covariates.R
-route_info_dir   <- here::here("data", "route_info")    # matches 1c_species_iCAR_covariates.R
+rds_dir          <- here::here("output", "rds")
+route_info_dir   <- here::here("data", "route_info")
 combined_out_dir <- here::here("output", "species_routes_covariates")
 if (!dir.exists(combined_out_dir)) dir.create(combined_out_dir, recursive = TRUE)
 per_species_out_dir <- here::here("output", "species_routes_covariates", "per_species")
@@ -125,8 +81,6 @@ for (i in seq_len(nrow(target_spp))) {
 
   cat("\n[", i, "/", nrow(target_spp), "]", sp, "\n")
 
-  # All four models are fit by 1c_species_iCAR_covariates.R on the identical
-  # reduced dataset, so all four are read the same way here.
   for (tag in model_tags) {
 
     out_base        <- paste0(sp_f, "_iCAR_", tag, "_", firstYear, "_", lastYear)
@@ -135,7 +89,7 @@ for (i in seq_len(nrow(target_spp))) {
                                  paste0(sp_f, "_", tag, "_", firstYear, "_", lastYear, "_route_info.rds"))
 
     if (!file.exists(summ_file) || !file.exists(route_info_file)) {
-      cat("  [", tag, "] No fitted output found — run 1c_species_iCAR_covariates.R first. Skipping.\n")
+      cat("  [", tag, "] No fitted output found — run 1c_species_iCAR_covariates_grasslands.R first. Skipping.\n")
       next
     }
 
@@ -158,11 +112,7 @@ for (i in seq_len(nrow(target_spp))) {
                 alpha         = mean,
                 rel_abundance = exp(mean))
 
-    # Species+model-level covariate effect, not per-route. "base" has no
-    # gamma1; each of the three covariate models has exactly one. Pull the
-    # 90% credible interval (q5/q95) alongside the mean, same way beta_summ
-    # does above, so downstream analyses can assess whether gamma1 is
-    # credibly different from zero instead of only seeing the point estimate.
+    # gamma1 (covariate effect): one value per species+model, NA for "base".
     if ("gamma1" %in% summ$variable) {
       gamma1_row        <- summ[summ$variable == "gamma1", ]
       gamma1_val        <- gamma1_row$mean[1]
@@ -176,10 +126,6 @@ for (i in seq_len(nrow(target_spp))) {
       gamma1_uci_val            <- NA_real_
       gamma1_excludes_zero_val <- NA
     }
-
-    # route_info (route, routeF, latitude, longitude) already loaded above
-    # from route_info.rds (already WGS84, no reprojection needed since 1c
-    # builds it directly from raw_data$latitude/longitude).
 
     route_trends <- beta_summ %>%
       left_join(alpha_summ, by = "routeF") %>%
@@ -203,11 +149,7 @@ for (i in seq_len(nrow(target_spp))) {
       gamma1_excludes_zero = gamma1_excludes_zero_val
     )
 
-    # Per-species-per-model CSV — same rows as route_trends above, just
-    # written individually (one species_code per file) instead of only into
-    # the combined all_route_rows list, so 3c_add_SDM_covariates.R can read
-    # them the same way 3_add_SDM.R reads 2_generate_route_trend_csvs.R's
-    # per-species files.
+    # Per-species-per-model CSV, so 3c can read one species/model per file.
     per_species_csv <- file.path(per_species_out_dir,
                                  paste0(sp_f, "_", tag, "_route_trends.csv"))
     write.csv(route_trends, per_species_csv, row.names = FALSE)
@@ -217,7 +159,7 @@ for (i in seq_len(nrow(target_spp))) {
 }
 
 if (length(all_route_rows) == 0) {
-  stop("Nothing to combine — run 1c_species_iCAR_covariates.R first.")
+  stop("Nothing to combine — run 1c_species_iCAR_covariates_grasslands.R first.")
 }
 
 all_route_trends <- bind_rows(all_route_rows)
@@ -242,8 +184,6 @@ cat("Model-level CSV written to:", model_csv, "\n")
 cat("Per-species-per-model CSVs written to:", per_species_out_dir,
     "(", length(all_route_rows), "files )\n")
 
-# Quick check on the new gamma1 CI columns: how many species have a 90%
-# credible interval that excludes zero, per covariate model.
 cat("\nSpecies with gamma1's 90% CI excluding zero (credible effect), by model:\n")
 print(all_model_summary %>%
         filter(model != "base") %>%

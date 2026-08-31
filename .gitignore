@@ -49,7 +49,6 @@ po/*~
 rsconnect/
 
 # Generated model inputs and maps
-data/*.csv
 data/maps/
 data/stan_data/
 data/route_info/

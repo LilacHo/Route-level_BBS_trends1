@@ -1,83 +1,165 @@
-# Route-level_BBS_trends1
+# Route-level_BBS_trends — grasslands release
 
-Route-level trend models for birds from the North American Breeding Bird Survey (BBS), using an intrinsic CAR (iCAR) spatial model fit in Stan via `bbsBayes2` and `cmdstanr`.
-
-Adapted from Adam Smith's [Route-level_BBS_trends](https://github.com/AdamCSmithCWS/Route-level_BBS_trends). 
-
-## Pipeline
-
-Run in order:
-
-1. `0_prepare_aou.R`
-2. `1_species_iCAR_2010_2025.R`
-3. `2_generate_route_trend_csvs.R`
-
-### 0_prepare_aou.R
-
-Adds AOU numeric species codes to the target species list and checks each species against `bbsBayes2`'s species table.
-
-- Reads: `data/spp_names_codes_group.csv`
-- Writes: `data/spp_names_codes_group_aou.csv`
-- Original to this repo — no equivalent in the source project.
-
-### 1_species_iCAR_2010_2025.R
-
-Fits the iCAR route-level trend model, one species at a time, over 2010-2025. For each species it prepares BBS data with `bbsBayes2`, builds a route-neighbour (Voronoi) adjacency structure, fits the Stan model, saves the posterior summary and stan data, and runs a leave-future-out cross-validation on the final year.
-
-- Reads: `data/spp_names_codes_group_aou.csv`
-- Writes per species: `output/<species>_iCAR_New_2010_2025_stanfit.rds`, `..._summ_fit.rds`, `data/stan_data/<species>_2010_2025_stan_data.RData`, plus a combined `output/diagnostics_grasslands_2010_2025.csv`
-- Adapted from `1alt_Species_data_prep_bbsBayes2.R` (bbsBayes2-based data prep) and `Fitting_new_iCAR_slope_model.R` (iCAR model) in the source repo, combined into a single fit script.
-- Uses `functions/neighbours_define_voronoi.R` and `functions/posterior_summary_functions.R`, and the Stan models in `models/`, all carried over from the source repo.
-
-### 2_generate_route_trend_csvs.R
-
-Post-processing only — no model fitting. Reads the saved posterior summaries from step 1 and writes, per route, the raw `alpha` (log-scale intercept) and `beta` (log-scale slope) posterior means alongside their back-transformed, interpretable versions: `trend` (annual % change, with a 90% CI) and `rel_abundance`.
-
-- Reads: `output/<species>_iCAR_New_2010_2025_summ_fit.rds`, `data/stan_data/<species>_2010_2025_stan_data.RData`
-- Writes: `output/species_routes/<species>_route_trends.csv` with columns `species, species_code, route, latitude, longitude, alpha, beta, trend, trend_lci, trend_uci, rel_abundance`
-- `trend = 100 * (exp(beta) - 1)`: converts the log-scale annual slope `beta` into an annual percent change (`trend_lci`/`trend_uci` are the same transform applied to the 5th/95th posterior percentiles).
-- `rel_abundance = exp(alpha)`: converts the log-scale intercept `alpha` back to the count scale — the model's expected count for an average observer at that route in the fixed (mid-series) year.
-- New script for this repo — the source project has no direct equivalent step.
-
-## Covariate pipeline
-
-Parallel to the base pipeline above, this repo also fits models with a land-cover covariate added, one bird group (grasslands, forests, aridlands, ...) at a time:
+Route-level trend models for grassland birds from the North American Breeding
+Bird Survey (BBS), using an intrinsic CAR (iCAR) spatial model fit in Stan
+via `bbsBayes2` and `cmdstanr`, with a land-cover covariate added:
 
 ```
 log(lambda[r,t]) = alpha[r] + beta[r]*t + gamma1 * covariate[r,t]
 ```
 
-Run in order: `1c_species_iCAR_covariates*.R` -> `2c_generate_route_trend_csvs_covariates.R` -> `3c_add_SDM_covariates.R` -> `4c_statistical_analysis_and_visualization_covariates.R`.
+Four models are fit per species, all on the same reduced dataset so they're
+directly comparable:
 
-### 1c_species_iCAR_covariates.R / 1c_species_iCAR_covariates_aridlands.R
+| model_tag | covariate | NLCD classes | Stan model |
+|---|---|---|---|
+| `base` | none | — | `slope_iCAR_route_NB_New.stan` |
+| `grassland_habitat` | the proportion of the BBS route 1km buffer in grassland/herbaceous cover (including managed grassland, i.e. pasture) | 71 (grassland/herbaceous), 81 (pasture/hay) | `slope_iCAR_route_NB_New_covariate.stan` |
+| `grassland_anthro` | the proportion of the BBS route 1km buffer in developed + cropland cover | 21, 22, 23, 24 (developed), 82 (cultivated crops) | `slope_iCAR_route_NB_New_covariate.stan` |
+| `grassland_habitat_to_anthro` | year-over-year rate of route converting from grassland/herbaceous to developed or cropland cover | {71, 81} -> {21, 22, 23, 24, 82} | `slope_iCAR_route_NB_New_covariate.stan` |
 
-Fits a "base" (no-covariate) model plus several single-covariate models per species, for one or more bird groups. Uses a generalized architecture: each `model_tag` doubles as the joined covariate column name in `new_data`, resolved through a `group_config` named list rather than hardcoded per group, so the same `prepare_species_data()`/`fit_one_covariate_model()` functions serve every group. Species panels are drawn as a reproducible random sample per group (`set.seed()`), not hand-picked.
+The generation of covariates and NLCD class codes are from the companion
+[BBS_landcover](https://github.com/LilacHo/BBS_landcover) repo, which
+computes these route-buffer proportions from annual NLCD rasters.
 
-- Reads: `data/spp_names_codes_group_aou.csv`, one covariate CSV per model_tag (route-year proportions, columns `CountryNum/StateNum/Route/.../year/<value col>`; `check.names = FALSE` preserves spaces in the header where present)
-- Writes per species x model_tag: `output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_{stanfit,summ_fit}.rds`, `data/route_info/<species>_<tag>_<firstYear>_<lastYear>_route_info.rds`, `data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData`, plus a combined `output/diagnostics_covariates_<land_cover>_<firstYear>_<lastYear>.csv` and (via `helper/gamma_lookup.R`) `output/files/gamma_lookup_<land_cover>_<firstYear>_<lastYear>.csv`
-- `1c_species_iCAR_covariates.R` currently covers four forest groups in one run (boreal_forests, eastern_forests, subtropical_forests, western_forests); `1c_species_iCAR_covariates_aridlands.R` is a single-group adaptation fitting 9 model tags for aridlands (base + 8 covariate variants: standing-stock habitat/anthro levels plus habitat-to-anthro transition covariates)
-- Uses `models/slope_iCAR_route_NB_New.stan` (base) and `models/slope_iCAR_route_NB_New_covariate.stan` (single-covariate)
+Models adapted from Adam Smith's
+[Route-level_BBS_trends](https://github.com/AdamCSmithCWS/Route-level_BBS_trends).
 
-### 2c_generate_route_trend_csvs_covariates.R / 3c_add_SDM_covariates.R / 4c_statistical_analysis_and_visualization_covariates.R
+## Author / Contact
 
-Covariate-pipeline counterparts of `2_generate_route_trend_csvs.R` / `3_add_SDM.R` / `4_statistical_analysis_and_visualization.R` — same per-route trend derivation, climate-scenario extraction, and CLD-annotated statistical comparison, run against 1c's output (`output/rds/`, `data/route_info/`) instead of `1_species_iCAR_2010_2025.R`'s, with entirely separate output directories so the two pipelines never collide.
+- Author: Lilac Hong
+- Organization: University of Washington
+- Email: zhhong@uw.edu
 
-**Known gap:** these three scripts are still written for the original grasslands 4-tag design (`base`/`grassland_habitat`/`grassland_anthro`/`grassland_habitat_to_anthro`) and have not yet been generalized for the forest-group or aridlands model tags — running them against forest or aridlands output will need their `model_tags`/`land_cover` settings (and 2c's hardcoded 4-model assumption) updated first.
+## Dependencies
 
-## Diagnostic helpers (helper/)
+- R (v4.6.0).
+- R packages: `bbsBayes2` (v1.2026.0), `cmdstanr` (v0.9.0), `tidyverse`, `posterior`,
+  `sf`, `spdep`, `concaveman`, `here`, `terra`, `multcompView`.
+- [CmdStan](https://mc-stan.org/users/interfaces/cmdstan) (v2.39.0), installed and
+  discoverable by `cmdstanr`.
 
-Small, soft-coded scripts for inspecting already-fitted output without re-running or refitting any model — every setting is a function argument, nothing is hardcoded to one bird group.
+## Spatial reference
 
-- **`gamma_lookup.R`** — pulls gamma1's full posterior summary (mean/median/sd/q5/q95/rhat/ess) out of every species x model_tag's `*_summ_fit.rds`, prints a credibility/convergence summary, writes `output/files/gamma_lookup_<land_cover>_<firstYear>_<lastYear>.csv`. Can be sourced standalone or called at the end of a 1c run.
-- **`covariate_variance_decomp.R`** — for a route-year covariate CSV, splits its variance into between-route (absorbed by alpha[r], unusable for estimating trend) vs. within-route (the only part gamma1 can actually use) shares. Useful for spotting weakly-identified covariates before fitting — though note the within-route *share* (ICC) can be misleading when comparing covariates of very different overall scale; the absolute within-route variance is what predicts identifiability. Writes `output/files/covariate_variance_decomp_<label>_<firstYear>_<lastYear>.csv`.
-- **`beta_compare.R`** — compares route-level trend (beta[r]) between two already-fitted model_tags for the same species (e.g. `"base"` vs. `"anthro"`), to see how much of the raw trend actually gets reassigned to a covariate once it's added, vs. how much is left over. Writes `output/files/beta_compare_<tag_a>_vs_<tag_b>_<label>_<firstYear>_<lastYear>.csv`.
-- **`route_info.R`** — backfills `data/route_info/*.rds` from an existing `stan_data.RData`, for runs saved before 1c started writing `route_info.rds` directly.
+All latitude/longitude coordinates in this release (BBS route locations,
+and the SDM raster extraction in 3c) use the WGS84 geodetic datum
+(EPSG:4326).
 
-## tests/
+## Run order
 
-Exploratory/diagnostic scripts, not part of the main pipeline:
+```
+0_prepare_aou.R
+-> 1c_species_iCAR_covariates_grasslands.R
+-> 2c_generate_route_trend_csvs_covariates.R
+-> 3c_add_SDM_covariates.R
+-> 4c_statistical_analysis_and_visualization_covariates.R   (once per model_tag)
+```
 
-- `test_16covariates_pilot.R` — fits all 16 individual NLCD land-cover covariates simultaneously (one model per species, not one model per covariate) across several bird groups' pilot species panels.
-- `test_covariate_scaling.R`, `test_grass_to_anthro_scaling.R`, `test_grass_to_anthro_scaling_multi_species.R` — compare covariate transformations (raw / standardized / sqrt-rescaled / within-between) for single- and multi-species fits.
-- `test_beta_compare_aridlands.R` — runs `helper/beta_compare.R`'s base-vs-anthro comparison for the aridlands pilot species panel, reading already-saved fits with no refitting.
+## Inputs you need to supply
 
+Everything else is generated by the scripts below. Only these are not:
+
+- `data/spp_names_codes_group.csv` — list of species and their bird group 
+  (must include a `"grasslands"` group). Access through [Bateman et al. 2020](https://adaptwest.databasin.org/pages/audubon-survival-by-degrees/).
+- `data/grassland_habitat.csv`, `data/grassland_anthro.csv`,
+  `data/grassland_habitat_to_anthro.csv` — the three covariate CSVs, one row
+  per BBS route per year (`CountryNum/StateNum/Route/.../year/<value col>`;
+  the value column header itself keeps its original literal spaces, e.g.
+  `"grassland habitat"` — read with `check.names = FALSE`).
+  Produced by the [BBS_landcover](https://github.com/LilacHo/BBS_landcover).
+- `data/rcp45_grasslands/`, `data/rcp85_grasslands/` — per-species SDM
+  classified-change rasters (`.tif`), named
+  `grasslands_<species_code>_breeding_2025_<45|85>_ENSEMBLE_classifiedchange.tif`.
+  Access through [Bateman et al. 2020](https://adaptwest.databasin.org/pages/audubon-survival-by-degrees/).
+- BBS survey data — `bbsBayes2` fetches and caches this locally the
+  first time it's needed; run `bbsBayes2::fetch_bbs_data()` once beforehand
+  if it isn't cached yet.
+
+## Scripts
+
+### 0_prepare_aou.R
+
+Adds AOU numeric species codes to the species list and flags which species
+are in `bbsBayes2`'s BBS species table.
+
+- Reads: `data/spp_names_codes_group.csv`
+- Writes: `data/spp_names_codes_group_aou.csv`
+
+### 1c_species_iCAR_covariates_grasslands.R
+
+Fits all four models above, for every species in the `"grasslands"` group
+(no subsampling — the full group). For each species: pulls BBS route data
+via `bbsBayes2`, joins the three covariates by route + year, drops any
+route-year missing a covariate (so all four models see identical rows),
+builds a Voronoi route-adjacency structure, and samples each Stan model.
+
+- Reads: `data/spp_names_codes_group_aou.csv`, the three covariate CSVs
+- Writes per species x model_tag:
+  - `output/rds/<species>_iCAR_<tag>_2010_2025_stanfit.rds` — full posterior draws
+  - `output/rds/<species>_iCAR_<tag>_2010_2025_summ_fit.rds` — posterior summary
+  - `data/route_info/<species>_<tag>_2010_2025_route_info.rds` — route/lat/lon lookup
+  - `data/stan_data/<species>_<tag>_2010_2025_stan_data.RData` — the exact data fed to Stan
+  - `output/diagnostics_covariates_grasslands_2010_2025.csv` — one row per species x tag (Rhat, ESS, gamma1, fit time)
+- Skips a species/tag only when all three of its output files already exist
+  (`force_refit <- FALSE` in the script by default; set it to `TRUE` to
+  force everything to re-fit regardless).
+- Uses `functions/neighbours_define_voronoi.R` (builds the spatial adjacency
+  structure) and `helper/gamma_lookup.R` (called at the end to write a
+  gamma1 credibility/convergence summary — see below).
+
+### 2c_generate_route_trend_csvs_covariates.R
+
+Post-processing only — no fitting. Reads every species x model_tag's
+`summ_fit.rds` + `route_info.rds` from step 1c and converts the raw
+`alpha`/`beta` posterior means into interpretable quantities:
+`trend = 100 * (exp(beta) - 1)` (annual % change, with a 90% CI from the
+posterior's q5/q95) and `rel_abundance = exp(alpha)`. Also pulls gamma1's
+mean and 90% CI for the three covariate models.
+
+- Reads: `output/rds/*_summ_fit.rds`, `data/route_info/*_route_info.rds`,
+  `data/spp_names_codes_group_aou.csv`
+- Writes:
+  - `output/species_routes_covariates/all_route_trends_grasslands_2010_2025.csv` — every route x species x model
+  - `output/species_routes_covariates/all_model_level_summary_grasslands_2010_2025.csv` — one row per species x model (gamma1 + its CI)
+  - `output/species_routes_covariates/per_species/<species>_<tag>_route_trends.csv` — same per-route data, split one file per species x tag (needed by 3c below)
+
+### 3c_add_SDM_covariates.R
+
+Adds climate-suitability columns to each per-species-per-model file from 2c,
+by extracting SDM raster values at each route's location.
+
+- Reads: `output/species_routes_covariates/per_species/*.csv`,
+  `data/spp_names_codes_group_aou.csv`, `data/rcp45_grasslands/`,
+  `data/rcp85_grasslands/`
+- Writes: `output/species_routes_covariates/per_species_sdm/<species>_<tag>_route_trends_sdm.csv`
+  (same columns as the input, plus `rcp45`/`rcp85` — a 0-7 classified-change
+  code; see the raster value legend in the script's header comment)
+
+### 4c_statistical_analysis_and_visualization_covariates.R
+
+Statistical comparison and violin plots (with compact-letter-display
+annotations from pairwise Wilcoxon tests, BH-adjusted) of route-level
+`trend` across whatever grouping the script defines (e.g. by SDM class).
+Analyzes exactly one `model_tag` per run — set `model_tag` near the top of
+the script and rerun once per tag to compare across models.
+
+- Reads: `output/species_routes_covariates/per_species_sdm/*.csv`,
+  `data/spp_names_codes_group_aou.csv`
+- Writes: stats tables under `output/species_routes_covariates/per_species_sdm_stats/`
+  and plots under `output/species_routes_covariates/per_species_sdm_plot/`
+
+## Supporting files
+
+- `functions/neighbours_define_voronoi.R` — builds the Voronoi-polygon
+  spatial adjacency structure (node1/node2 edge lists) that the iCAR spatial
+  priors on alpha/beta need. Used by 1c.
+- `helper/gamma_lookup.R` — pulls gamma1's posterior summary (mean, median,
+  sd, q5/q95, Rhat, ESS) out of every species x model_tag's `summ_fit.rds`,
+  prints a credibility/convergence summary, and writes
+  `output/files/gamma_lookup_grasslands_2010_2025.csv`. Sourced and called
+  automatically at the end of 1c; can also be run standalone.
+- `models/slope_iCAR_route_NB_New.stan` — the no-covariate iCAR route-level
+  slope model (`base`).
+- `models/slope_iCAR_route_NB_New_covariate.stan` — the same model with one
+  added covariate term (`grassland_habitat`, `grassland_anthro`,
+  `grassland_habitat_to_anthro`).
