@@ -24,16 +24,10 @@ computes route-buffer land-cover proportions from annual NLCD rasters.
 Models adapted from Adam Smith's
 [Route-level_BBS_trends](https://github.com/AdamCSmithCWS/Route-level_BBS_trends).
 
-## Author / Contact
-
-- Author: Lilac Hong
-- Organization: University of Washington
-- Email: zhhong@uw.edu
-
 ## Dependencies
 
 - R (v4.6.0).
-- R packages: `bbsBayes2` (v1.2026.0), `cmdstanr` (v0.9.0), `tidyverse`, `posterior`,
+- R packages: `bbsBayes2` (v1.2026.3), `cmdstanr` (v0.9.0), `tidyverse`, `posterior`,
   `sf`, `spdep`, `concaveman`, `here`, `terra`, `multcompView`.
 - [CmdStan](https://mc-stan.org/users/interfaces/cmdstan) (v2.39.0), installed and
   discoverable by `cmdstanr`.
