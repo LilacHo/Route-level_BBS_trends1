@@ -63,8 +63,12 @@
 ##   output/rds/<species>_iCAR_<tag>_<firstYear>_<lastYear>_summ_fit.rds
 ##   data/route_info/<species>_<tag>_<firstYear>_<lastYear>_route_info.rds
 ##   data/stan_data/<species>_<tag>_<firstYear>_<lastYear>_stan_data.RData
-## Plus one combined diagnostics CSV and (via helper/gamma_lookup.R) one
-## gamma1 lookup table across all species.
+## Plus one combined diagnostics CSV and (via helper/model_convergence.R)
+## one whole-model convergence table across all species and tags, including
+## "base" (Rhat < 1.01 and bulk ESS > 400 required across every parameter).
+## For gamma1's own posterior summary and credibility (90% CI excludes
+## zero) across species, run helper/gamma_lookup.R separately -- it's no
+## longer called automatically from this script.
 ## =============================================================================
 
 library(bbsBayes2)
@@ -95,7 +99,6 @@ if (!dir.exists(cmdstanr_output_dir)) dir.create(cmdstanr_output_dir, recursive 
 # Settings ----------------------------------------------------------------
 firstYear  <- 2010
 lastYear   <- 2025
-dt         <- lastYear - firstYear
 
 strat <- "bcr"   # NOT "bbs_usgs" -- see earlier versions of this script for
                  # the full explanation.
@@ -186,12 +189,15 @@ for (cn in setdiff(model_tags, "base")) {
 # anymore, since anthro applies the same way to every species regardless of
 # its Group.
 # ==========================================================================
-# Hardcoded into this script's own flow (not optional/manual): both
-# gamma_lookup_table() (gamma1's own posterior summary + credibility) and
+# Hardcoded into this script's own flow (not optional/manual):
 # model_convergence_table() (whole-model Rhat/ESS pass-fail, base included)
-# are ALWAYS run at the end of this script, right after the main loop below.
-gamma_lookup_skip_autorun <- TRUE
-source(here::here("helper", "gamma_lookup.R"))
+# is ALWAYS run at the end of this script, right after the main loop below.
+# gamma_lookup_table() (gamma1's own posterior summary + credibility) is
+# NOT run here -- run helper/gamma_lookup.R separately when you want that
+# report; it's a distinct question (what is gamma1, and is it credible)
+# from whole-model convergence (did every parameter mix properly), and
+# duplicated the convergence check model_convergence_table() already covers
+# more completely (it also checks "base", which gamma_lookup_table() can't).
 model_convergence_skip_autorun <- TRUE
 source(here::here("helper", "model_convergence.R"))
 
@@ -286,11 +292,6 @@ if (length(diagnostics_list) > 0) {
   write.csv(diagnostics_all, diag_csv, row.names = FALSE)
   cat("\nDiagnostics written to:", diag_csv, "\n")
 }
-
-# gamma1 lookup table across every species (non-base tags only) --------------
-gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
-                   firstYear = firstYear, lastYear = lastYear,
-                   rds_dir = rds_dir, bird_group = "all_species_anthro")
 
 # Whole-model convergence table across every species AND every tag,
 # including "base" -- Rhat < 1.01 and bulk ESS > 400 required across every
