@@ -32,8 +32,22 @@
 ##   1) Per-route file — one row per route/species/model:
 ##      output/species_routes_covariates/all_route_trends_all_species_anthro_<firstYear>_<lastYear>.csv
 ##      columns: species, species_code, group, model, route, latitude,
-##               longitude, alpha, beta, trend, trend_lci, trend_uci,
-##               rel_abundance
+##               longitude, alpha, beta, route_converged, trend, trend_lci,
+##               trend_uci, rel_abundance
+##
+## route_converged is TRUE only if THIS route's own alpha[r] and beta[r]
+## posterior draws BOTH individually meet the project's convergence
+## criterion (Rhat < 1.01 and bulk ESS > 400), applied at the single-
+## parameter level -- independent of whether anything else in the same fit
+## (gamma1, hyperparameters, other routes) converged. This is deliberately
+## NOT the same thing as whole-model convergence (helper/
+## model_convergence.R's model_converged): a route can be TRUE here even
+## inside a model that fails whole-model convergence elsewhere, and that's
+## fine -- per the route-level-exclusion approach settled on in chat (see
+## the manuscript-style write-up), it's this per-route flag, not the
+## whole-model one, that should drive which rows get excluded downstream.
+## FALSE if either alpha[r] or beta[r] fails the criterion, or if either is
+## NA (no draws/diagnostics available for that parameter).
 ##
 ##   2) Model-level file — one row per species/model (NOT per route), for
 ##      quantities that are constant across a species' routes:
@@ -61,8 +75,8 @@
 ## satisfy:
 ##   output/species_routes_covariates/per_species/<species>_<model_tag>_route_trends.csv
 ##   columns: species, species_code, group, model, route, latitude,
-##            longitude, alpha, beta, trend, trend_lci, trend_uci,
-##            rel_abundance
+##            longitude, alpha, beta, route_converged, trend, trend_lci,
+##            trend_uci, rel_abundance
 ## (same columns as the combined per-route file, including "group" and
 ## "model", which 3c_add_SDM_covariates.R/
 ## 4c_statistical_analysis_and_visualization_covariates.R just carry through
@@ -120,7 +134,7 @@ species_to_f <- function(sp) {
 
 # Column order every row is coerced to before combining --------------------
 route_cols <- c("species", "species_code", "group", "model", "route",
-                "latitude", "longitude", "alpha", "beta",
+                "latitude", "longitude", "alpha", "beta", "route_converged",
                 "trend", "trend_lci", "trend_uci", "rel_abundance")
 model_cols <- c("species", "species_code", "group", "model", "n_routes",
                 "gamma1", "gamma1_lci", "gamma1_uci", "gamma1_excludes_zero")
@@ -156,21 +170,29 @@ for (i in seq_len(nrow(target_spp))) {
     summ       <- readRDS(summ_file)
     route_info <- readRDS(route_info_file)   # route, routeF, latitude, longitude
 
-    # Extract beta (slope) per route -> raw value + annual % trend + 90% CI --
+    # Extract beta (slope) per route -> raw value + annual % trend + 90% CI,
+    # plus its own rhat/ess_bulk (for route_converged below -- the SAME
+    # beta[r] draws that produce trend/trend_lci/trend_uci, not the
+    # underlying non-centered beta_raw_space[r]) -----------------------------
     beta_summ <- summ %>%
       filter(str_detect(variable, "^beta\\[")) %>%
-      transmute(routeF    = as.integer(str_extract(variable, "\\d+")),
-                beta      = mean,
-                trend     = 100 * (exp(mean) - 1),
-                trend_lci = 100 * (exp(q5)   - 1),
-                trend_uci = 100 * (exp(q95)  - 1))
+      transmute(routeF        = as.integer(str_extract(variable, "\\d+")),
+                beta          = mean,
+                trend         = 100 * (exp(mean) - 1),
+                trend_lci     = 100 * (exp(q5)   - 1),
+                trend_uci     = 100 * (exp(q95)  - 1),
+                rhat_beta     = rhat,
+                ess_bulk_beta = ess_bulk)
 
-    # Extract alpha (intercept) per route -> raw value + relative abundance --
+    # Extract alpha (intercept) per route -> raw value + relative abundance,
+    # plus its own rhat/ess_bulk (same reasoning as beta above) --------------
     alpha_summ <- summ %>%
       filter(str_detect(variable, "^alpha\\[")) %>%
-      transmute(routeF        = as.integer(str_extract(variable, "\\d+")),
-                alpha         = mean,
-                rel_abundance = exp(mean))
+      transmute(routeF         = as.integer(str_extract(variable, "\\d+")),
+                alpha          = mean,
+                rel_abundance  = exp(mean),
+                rhat_alpha     = rhat,
+                ess_bulk_alpha = ess_bulk)
 
     # Species+model-level covariate effect, not per-route. "base" has no
     # gamma1; "anthro" has exactly one. Pull the 90% credible interval
@@ -201,7 +223,17 @@ for (i in seq_len(nrow(target_spp))) {
       mutate(species      = sp,
              species_code = sp_code,
              group        = sp_group,
-             model        = tag) %>%
+             model        = tag,
+             # This route's own alpha[r] AND beta[r] must BOTH individually
+             # meet the project's convergence criterion (Rhat < 1.01, bulk
+             # ESS > 400) -- independent of whole-model convergence (see
+             # header comment). NA (missing rhat/ess, e.g. a parameter that
+             # never sampled) counts as NOT converged rather than propagating
+             # NA through the column.
+             route_converged = !is.na(rhat_alpha) & !is.na(ess_bulk_alpha) &
+               !is.na(rhat_beta) & !is.na(ess_bulk_beta) &
+               rhat_alpha < 1.01 & ess_bulk_alpha > 400 &
+               rhat_beta  < 1.01 & ess_bulk_beta  > 400) %>%
       arrange(routeF) %>%
       select(all_of(route_cols))
 

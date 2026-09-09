@@ -51,6 +51,18 @@ bird_group <- NA   # one of the 12 Group values in
 
 model_tag <- "base" # Change as needed ("base" or "anthro")
 
+# When TRUE (default), rows whose route_converged is not TRUE (i.e. THIS
+# route's own alpha[r]/beta[r] didn't individually meet Rhat < 1.01 & bulk
+# ESS > 400 -- see 2c_generate_route_trend_csvs_covariates.R's header) are
+# dropped before any statistical test or plot below, since a non-converged
+# route's trend estimate shouldn't be pooled with converged ones in the
+# same comparison. Set to FALSE to include every route regardless of
+# convergence (e.g. to see how much the excluded routes would have changed
+# the result) -- every stats/plot output filename below is unaffected
+# either way, so re-running with this flipped will silently overwrite the
+# previous run's output; rename/move it first if you want to keep both.
+require_route_converged <- TRUE
+
 out_dir   <- here::here("output", "species_routes_covariates", "per_species_sdm")
 stats_dir <- here::here("output", "species_routes_covariates", "per_species_sdm_stats")
 plot_dir  <- here::here("output", "species_routes_covariates", "per_species_sdm_plot")
@@ -84,6 +96,12 @@ if (!"group" %in% names(all_sdm_raw_unfiltered)) {
        "predate 2c writing 'group' directly; re-run 2c_generate_route_trend_csvs_covariates.R ",
        "and 3c_add_SDM_covariates.R to regenerate them.")
 }
+if (require_route_converged && !"route_converged" %in% names(all_sdm_raw_unfiltered)) {
+  stop("require_route_converged is TRUE but no 'route_converged' column found in the SDM CSVs ",
+       "in ", out_dir, " — these files predate 2c writing that column; re-run ",
+       "2c_generate_route_trend_csvs_covariates.R and 3c_add_SDM_covariates.R to regenerate them, ",
+       "or set require_route_converged <- FALSE to skip this check (not recommended).")
+}
 
 models_available <- sort(unique(all_sdm_raw_unfiltered$model))
 if (!model_tag %in% models_available) {
@@ -116,6 +134,30 @@ if (is.na(bird_group)) {
 if (nrow(target_sdm) == 0) {
   stop("No SDM rows matched bird_group = '", bird_group, "' and model_tag = '",
        model_tag, "'. Groups present: ", paste(sort(unique(all_sdm_raw$group)), collapse = ", "))
+}
+
+# Drop non-converged routes before any test/plot below (see
+# require_route_converged's setting comment above for why, and how to turn
+# this off) -- route_converged is FALSE/NA for a route whose own
+# alpha[r]/beta[r] didn't individually meet the project's convergence
+# criterion, independent of whole-model convergence.
+if (require_route_converged) {
+  n_before <- nrow(target_sdm)
+  n_routes_before <- length(unique(target_sdm$route))
+  target_sdm <- target_sdm %>% filter(route_converged == TRUE)
+  n_after <- nrow(target_sdm)
+  n_routes_after <- length(unique(target_sdm$route))
+  cat("require_route_converged = TRUE -> dropped", n_before - n_after,
+      "of", n_before, "row(s) (", n_routes_before - n_routes_after, "of",
+      n_routes_before, "unique route(s)) whose alpha[r]/beta[r] didn't ",
+      "individually meet Rhat < 1.01 & bulk ESS > 400.\n")
+  if (nrow(target_sdm) == 0) {
+    stop("No rows left after filtering to route_converged == TRUE (bird_group = '", bird_group,
+         "', model_tag = '", model_tag, "'). Set require_route_converged <- FALSE to include ",
+         "non-converged routes, or investigate why nothing here converged.")
+  }
+} else {
+  cat("require_route_converged = FALSE -> including all routes regardless of convergence.\n")
 }
 
 cat("Total rows:", nrow(target_sdm), "\n")
