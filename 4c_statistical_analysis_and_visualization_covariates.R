@@ -19,22 +19,25 @@
 # CSVs and carried through 3c_add_SDM_covariates.R).
 #
 # Every input file has a "model" column (base / anthro), since 3c's input
-# files are per-species-PER-MODEL. This script analyzes exactly ONE
-# model_tag per run (set below) — all rows for every other model are
-# filtered out immediately after reading, before any test or plot is built,
-# so nothing gets pooled across models. To compare models, rerun this
-# script once per model_tag (edit the setting, or set `model_tag <- "..."`
-# before sourcing this file) — every stats/plot output filename below
-# includes model_tag, so separate runs don't overwrite each other's output.
+# files are per-species-PER-MODEL. model_tags is HARDCODED below to
+# c("base", "anthro") -- this script now always analyzes BOTH models in one
+# run: Parts 1-4 (the per-category/RCP statistical tests and violin plots)
+# run once per tag inside a loop, each writing its own stats/plot files
+# (every filename already includes model_tag, so the two passes never
+# overwrite each other). No more manually re-running this script per tag.
+#
+# PART 5, after the loop, is new: a direct statistical comparison of
+# base-model vs anthro-model trend, PAIRED by species+route (both models
+# are fit on the identical reduced dataset per species, so a route's base
+# trend and anthro trend are directly comparable, not independent samples).
+# Uses a paired Wilcoxon signed-rank test, overall and per species.
 #
 # Since 1c_species_iCAR_covariates.R / 2c now fit and combine EVERY species
 # across all 12 groups in one run (not one bird_group at a time), each
 # input file also carries a "group" column (written directly by 2c). Set
-# bird_group below to one real group (e.g. "aridlands") to reproduce the
-# original per-group Parts 1-4 breakdown, or set it to NA to skip the
-# group filter and pool every species/group together (PART 5 below, which
-# used to be an optional add-on, is now effectively the default view given
-# 1c's all-species scope, and runs automatically when bird_group is NA).
+# bird_group below to one real group (e.g. "aridlands") to restrict every
+# Part (1-5) to that group, or set it to NA to pool every species/group
+# together (the default, given 1c's all-species scope).
 
 library(here)
 library(tidyverse)
@@ -45,11 +48,12 @@ here::i_am("4c_statistical_analysis_and_visualization_covariates.R")
 # Settings -----------------------------------------------------------------
 bird_group <- NA   # one of the 12 Group values in
                    # data/spp_names_codes_group_aou.csv (e.g. "aridlands",
-                   # "boreal_forests", ...) to restrict Parts 1-4 to that
-                   # group, or NA to skip Parts 1-4 entirely and only run
-                   # Part 5 (all groups pooled) -- see note above.
+                   # "boreal_forests", ...) to restrict every Part (1-5) to
+                   # that group, or NA to pool every species/group together.
 
-model_tag <- "base" # Change as needed ("base" or "anthro")
+model_tags <- c("base", "anthro")   # HARDCODED -- always run Parts 1-4 for BOTH
+                                    # models in one pass (see the loop below),
+                                    # then PART 5 statistically compares them.
 
 # When TRUE (default), rows whose route_converged is not TRUE (i.e. THIS
 # route's own alpha[r]/beta[r] didn't individually meet Rhat < 1.01 & bulk
@@ -104,81 +108,17 @@ if (require_route_converged && !"route_converged" %in% names(all_sdm_raw_unfilte
 }
 
 models_available <- sort(unique(all_sdm_raw_unfiltered$model))
-if (!model_tag %in% models_available) {
-  stop("model_tag = '", model_tag, "' not found in ", out_dir,
-       " — models available: ", paste(models_available, collapse = ", "),
-       ". Set model_tag to one of those (or run 2c/3c for the model you want first).")
+missing_tags <- setdiff(model_tags, models_available)
+if (length(missing_tags) > 0) {
+  stop("model_tags requires ", paste(missing_tags, collapse = ", "), " but only these models ",
+       "were found in ", out_dir, ": ", paste(models_available, collapse = ", "),
+       ". Run 2c_generate_route_trend_csvs_covariates.R/3c_add_SDM_covariates.R for the missing ",
+       "model(s) first.")
 }
-
-# Restrict to exactly one model BEFORE any downstream filtering/analysis, so
-# every stats/plot output below reflects this one model only — nothing gets
-# pooled across models.
-all_sdm_raw <- all_sdm_raw_unfiltered %>% filter(model == model_tag)
-
-cat("model_tag:", model_tag, "(", nrow(all_sdm_raw), "of", nrow(all_sdm_raw_unfiltered),
-    "rows across all models present in", out_dir, ")\n")
-
-# bird_group == NA means "pool every group" (see settings comment above);
-# otherwise restrict to that one group, same as before. run_label is used
-# everywhere below that used to use bird_group directly for file/title
-# text, so filenames never end up with a literal "NA" in them.
-if (is.na(bird_group)) {
-  target_sdm <- all_sdm_raw
-  run_label  <- "all_groups"
-  cat("bird_group = NA -> pooling all groups\n")
-} else {
-  target_sdm <- all_sdm_raw %>% filter(group == bird_group)
-  run_label  <- bird_group
-}
-
-if (nrow(target_sdm) == 0) {
-  stop("No SDM rows matched bird_group = '", bird_group, "' and model_tag = '",
-       model_tag, "'. Groups present: ", paste(sort(unique(all_sdm_raw$group)), collapse = ", "))
-}
-
-# Drop non-converged routes before any test/plot below (see
-# require_route_converged's setting comment above for why, and how to turn
-# this off) -- route_converged is FALSE/NA for a route whose own
-# alpha[r]/beta[r] didn't individually meet the project's convergence
-# criterion, independent of whole-model convergence.
-if (require_route_converged) {
-  n_before <- nrow(target_sdm)
-  n_routes_before <- length(unique(target_sdm$route))
-  target_sdm <- target_sdm %>% filter(route_converged == TRUE)
-  n_after <- nrow(target_sdm)
-  n_routes_after <- length(unique(target_sdm$route))
-  cat("require_route_converged = TRUE -> dropped", n_before - n_after,
-      "of", n_before, "row(s) (", n_routes_before - n_routes_after, "of",
-      n_routes_before, "unique route(s)) whose alpha[r]/beta[r] didn't ",
-      "individually meet Rhat < 1.01 & bulk ESS > 400.\n")
-  if (nrow(target_sdm) == 0) {
-    stop("No rows left after filtering to route_converged == TRUE (bird_group = '", bird_group,
-         "', model_tag = '", model_tag, "'). Set require_route_converged <- FALSE to include ",
-         "non-converged routes, or investigate why nothing here converged.")
-  }
-} else {
-  cat("require_route_converged = FALSE -> including all routes regardless of convergence.\n")
-}
-
-cat("Total rows:", nrow(target_sdm), "\n")
-cat(run_label, "species:", length(unique(target_sdm$species_code)), "\n")
-if (is.na(bird_group)) {
-  cat("Groups pooled:", paste(sort(unique(target_sdm$group)), collapse = ", "), "\n")
-}
-
-# Build combined analysis data ---------------------------------------------
-analysis_45 <- target_sdm %>%
-  filter(!is.na(rcp45)) %>%
-  transmute(route, species_code, category = rcp45, trend,
-            route_num = as.integer(sub("^\\d+-", "", route)))
-
-analysis_85 <- target_sdm %>%
-  filter(!is.na(rcp85)) %>%
-  transmute(route, species_code, category = rcp85, trend,
-            route_num = as.integer(sub("^\\d+-", "", route)))
 
 # Grouped categories: Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7
-#   (category 0 = never suitable, excluded)
+#   (category 0 = never suitable, excluded) -- no model_tag dependency,
+# defined once here rather than inside the per-tag loop below.
 group_category <- function(x) {
   dplyr::case_when(
     x %in% c(1, 2, 3) ~ "Contraction",
@@ -188,18 +128,14 @@ group_category <- function(x) {
   )
 }
 
-analysis_45_grp <- analysis_45 %>%
-  mutate(change_group = factor(group_category(category),
-                               levels = c("Contraction", "Stable", "Expansion")))
-
-analysis_85_grp <- analysis_85 %>%
-  mutate(change_group = factor(group_category(category),
-                               levels = c("Contraction", "Stable", "Expansion")))
-
-target_species_list <- unique(target_sdm$species_code)
-
 cat8_levels <- as.character(0:7)
 grp_levels  <- c("Contraction", "Stable", "Expansion")
+
+# Populated once per tag inside the loop below (each tag's fully filtered
+# target_sdm -- bird_group + require_route_converged already applied) --
+# PART 5, after the loop, reuses these directly for the base-vs-anthro
+# paired comparison instead of re-deriving the filters a third time.
+target_sdm_by_tag <- list()
 
 
 # ==========================================================================
@@ -380,6 +316,100 @@ make_violin_cld <- function(df45, df85, group, group_levels,
 
 
 # ==========================================================================
+# Parts 1-4 run once per model_tag (HARDCODED to both "base" and "anthro" --
+# see the settings block above). Everything from here through the end of
+# PART 4 is model_tag-dependent and now lives inside this loop; each tag's
+# final target_sdm is stashed in target_sdm_by_tag for PART 5 below.
+# ==========================================================================
+for (model_tag in model_tags) {
+
+cat("\n\n############################################################\n")
+cat("# Running Parts 1-4 for model_tag =", model_tag, "\n")
+cat("############################################################\n\n")
+
+# Restrict to exactly one model BEFORE any downstream filtering/analysis, so
+# every stats/plot output below reflects this one model only — nothing gets
+# pooled across models.
+all_sdm_raw <- all_sdm_raw_unfiltered %>% filter(model == model_tag)
+
+cat("model_tag:", model_tag, "(", nrow(all_sdm_raw), "of", nrow(all_sdm_raw_unfiltered),
+    "rows across all models present in", out_dir, ")\n")
+
+# bird_group == NA means "pool every group" (see settings comment above);
+# otherwise restrict to that one group, same as before. run_label is used
+# everywhere below that used to use bird_group directly for file/title
+# text, so filenames never end up with a literal "NA" in them.
+if (is.na(bird_group)) {
+  target_sdm <- all_sdm_raw
+  run_label  <- "all_groups"
+  cat("bird_group = NA -> pooling all groups\n")
+} else {
+  target_sdm <- all_sdm_raw %>% filter(group == bird_group)
+  run_label  <- bird_group
+}
+
+if (nrow(target_sdm) == 0) {
+  stop("No SDM rows matched bird_group = '", bird_group, "' and model_tag = '",
+       model_tag, "'. Groups present: ", paste(sort(unique(all_sdm_raw$group)), collapse = ", "))
+}
+
+# Drop non-converged routes before any test/plot below (see
+# require_route_converged's setting comment above for why, and how to turn
+# this off) -- route_converged is FALSE/NA for a route whose own
+# alpha[r]/beta[r] didn't individually meet the project's convergence
+# criterion, independent of whole-model convergence.
+if (require_route_converged) {
+  n_before <- nrow(target_sdm)
+  n_routes_before <- length(unique(target_sdm$route))
+  target_sdm <- target_sdm %>% filter(route_converged == TRUE)
+  n_after <- nrow(target_sdm)
+  n_routes_after <- length(unique(target_sdm$route))
+  cat("require_route_converged = TRUE -> dropped", n_before - n_after,
+      "of", n_before, "row(s) (", n_routes_before - n_routes_after, "of",
+      n_routes_before, "unique route(s)) whose alpha[r]/beta[r] didn't ",
+      "individually meet Rhat < 1.01 & bulk ESS > 400.\n")
+  if (nrow(target_sdm) == 0) {
+    stop("No rows left after filtering to route_converged == TRUE (bird_group = '", bird_group,
+         "', model_tag = '", model_tag, "'). Set require_route_converged <- FALSE to include ",
+         "non-converged routes, or investigate why nothing here converged.")
+  }
+} else {
+  cat("require_route_converged = FALSE -> including all routes regardless of convergence.\n")
+}
+
+cat("Total rows:", nrow(target_sdm), "\n")
+cat(run_label, "species:", length(unique(target_sdm$species_code)), "\n")
+if (is.na(bird_group)) {
+  cat("Groups pooled:", paste(sort(unique(target_sdm$group)), collapse = ", "), "\n")
+}
+
+# Build combined analysis data ---------------------------------------------
+analysis_45 <- target_sdm %>%
+  filter(!is.na(rcp45)) %>%
+  transmute(route, species_code, category = rcp45, trend,
+            route_num = as.integer(sub("^\\d+-", "", route)))
+
+analysis_85 <- target_sdm %>%
+  filter(!is.na(rcp85)) %>%
+  transmute(route, species_code, category = rcp85, trend,
+            route_num = as.integer(sub("^\\d+-", "", route)))
+
+analysis_45_grp <- analysis_45 %>%
+  mutate(change_group = factor(group_category(category),
+                               levels = c("Contraction", "Stable", "Expansion")))
+
+analysis_85_grp <- analysis_85 %>%
+  mutate(change_group = factor(group_category(category),
+                               levels = c("Contraction", "Stable", "Expansion")))
+
+target_species_list <- unique(target_sdm$species_code)
+
+# Stash this tag's fully filtered data for PART 5's base-vs-anthro
+# comparison, after the loop.
+target_sdm_by_tag[[model_tag]] <- target_sdm
+
+
+# ==========================================================================
 # PART 1: All 8 SDM categories (0-7) — all species ####
 # ==========================================================================
 
@@ -555,15 +585,137 @@ for (sp in target_species_list) {
   )
 }
 
+}  # end for (model_tag in model_tags) -- Parts 1-4 done for both tags
 
-# PART 5 (all land covers combined) used to live here as a separate,
-# commented-out block. It's no longer needed as a separate section: Parts
-# 1-4 above now do the same thing natively whenever bird_group <- NA (see
-# the settings block and run_label/target_sdm construction near the top of
-# this script) — target_sdm already becomes "every group pooled" and every
-# stats/plot filename already uses run_label ("all_groups" in that case), so
-# there's nothing left for a separate Part 5 to add. Set bird_group to a
-# specific group instead of NA to get the original single-group behavior.
 
-cat("\n=== Statistical analysis + visualization complete (covariate pipeline, model_tag = ",
-    model_tag, ", bird_group = ", run_label, ") ===\n", sep = "")
+# ==========================================================================
+# PART 5: Base vs Anthro paired trend comparison ####
+# ==========================================================================
+# Is a route's trend estimate statistically different depending on whether
+# the anthro covariate is in the model? Both "base" and "anthro" are fit on
+# the IDENTICAL reduced (anthro-non-NA) dataset per species
+# (1c_species_iCAR_covariates.R's "same data for a fair comparison"
+# principle), so a route's base-model trend and anthro-model trend are a
+# natural PAIRED comparison (same species, same route, same underlying
+# counts -- only the model differs), not two independent samples. Uses a
+# paired Wilcoxon signed-rank test, matching this script's use of Wilcoxon
+# tests throughout, both overall (every matched route pooled) and per
+# species (BH-adjusted across species).
+#
+# Only routes present in BOTH target_sdm_by_tag[["base"]] and
+# target_sdm_by_tag[["anthro"]] are compared here -- i.e. after the SAME
+# bird_group/require_route_converged filtering already applied to each tag
+# in the loop above. A route that converged under one tag but not the other
+# has no valid pair and is dropped from PART 5 specifically (it's still
+# included in that tag's own Parts 1-4 results).
+# ==========================================================================
+
+if (!all(c("base", "anthro") %in% names(target_sdm_by_tag))) {
+  message("PART 5 skipped -- requires both 'base' and 'anthro' in model_tags (currently: ",
+          paste(model_tags, collapse = ", "), ").")
+} else {
+
+  base_trend   <- target_sdm_by_tag[["base"]] %>%
+    distinct(species, species_code, group, route, trend_base = trend)
+  anthro_trend <- target_sdm_by_tag[["anthro"]] %>%
+    distinct(species, species_code, group, route, trend_anthro = trend)
+
+  matched <- base_trend %>%
+    inner_join(anthro_trend, by = c("species", "species_code", "group", "route")) %>%
+    mutate(diff = trend_anthro - trend_base)   # positive = anthro model gives a MORE positive trend
+
+  cat("\n\n##################################################\n")
+  cat("# PART 5: Base vs Anthro paired trend comparison\n")
+  cat("#   n matched routes:", nrow(matched), "(present, and converged if required, in BOTH models)\n")
+  cat("##################################################\n\n")
+
+  if (nrow(matched) < 2) {
+    message("PART 5 skipped -- fewer than 2 matched routes (base rows: ", nrow(base_trend),
+            ", anthro rows: ", nrow(anthro_trend), "). Check bird_group/require_route_converged.")
+  } else {
+
+    stats_file_base_vs_anthro <- file.path(stats_dir,
+                                           paste0(run_label, "_base_vs_anthro_trend_comparison.txt"))
+    sink(stats_file_base_vs_anthro)
+
+    cat("\n##################################################\n")
+    cat("# PART 5: Base vs Anthro paired trend comparison -- all matched routes\n")
+    cat("#   Response: trend, PAIRED by species+route (base vs anthro)\n")
+    cat("##################################################\n")
+
+    cat("\nn matched routes:", nrow(matched), "\n")
+    cat("Base trend   -- mean:", round(mean(matched$trend_base), 3),
+        " median:", round(median(matched$trend_base), 3), "\n")
+    cat("Anthro trend -- mean:", round(mean(matched$trend_anthro), 3),
+        " median:", round(median(matched$trend_anthro), 3), "\n")
+    cat("Difference (anthro - base) -- mean:", round(mean(matched$diff), 3),
+        " median:", round(median(matched$diff), 3), "\n")
+
+    overall_test <- wilcox.test(matched$trend_anthro, matched$trend_base, paired = TRUE)
+    cat("\nPaired Wilcoxon signed-rank test (anthro vs base, all matched routes pooled):\n")
+    cat("  V =", overall_test$statistic, ", p =", format.pval(overall_test$p.value, digits = 3), "\n")
+
+    cat("\n--- Per-species ---\n")
+    species_results <- list()
+    for (sp in sort(unique(matched$species_code))) {
+      d_sp <- matched %>% filter(species_code == sp)
+      sp_name <- unique(d_sp$species)[1]
+      cat("\n", sp_name, "(", sp, ") -- n =", nrow(d_sp), "\n")
+
+      sp_test <- if (nrow(d_sp) >= 2) {
+        tryCatch(wilcox.test(d_sp$trend_anthro, d_sp$trend_base, paired = TRUE),
+                 error = function(e) NULL)
+      } else NULL
+
+      if (is.null(sp_test)) {
+        cat("  Not enough routes/variation for a paired test.\n")
+        next
+      }
+      cat("  mean diff (anthro - base):", round(mean(d_sp$diff), 3),
+          " | V =", sp_test$statistic, ", p =", format.pval(sp_test$p.value, digits = 3), "\n")
+      species_results[[sp]] <- data.frame(species = sp_name, species_code = sp, n = nrow(d_sp),
+                                          mean_diff = mean(d_sp$diff), median_diff = median(d_sp$diff),
+                                          V = unname(sp_test$statistic), p_value = sp_test$p.value)
+    }
+
+    sink()
+    cat("Saved Part 5 (base vs anthro paired comparison) statistics to:", stats_file_base_vs_anthro, "\n")
+
+    if (length(species_results) > 0) {
+      species_results_df <- bind_rows(species_results) %>%
+        mutate(p_adj = p.adjust(p_value, method = "BH"),
+               significant_BH = p_adj < 0.05) %>%
+        arrange(p_adj)
+
+      species_csv <- file.path(stats_dir,
+                               paste0(run_label, "_base_vs_anthro_trend_comparison_by_species.csv"))
+      write.csv(species_results_df, species_csv, row.names = FALSE)
+      cat("Per-species base-vs-anthro results (BH-adjusted) written to:", species_csv, "\n")
+      cat(sum(species_results_df$significant_BH, na.rm = TRUE), "of", nrow(species_results_df),
+          "species show a significant (BH-adjusted p < 0.05) difference between base and anthro trend.\n")
+    }
+
+    # Plot: distribution of the per-route difference (anthro - base trend),
+    # with a reference line at zero and the overall paired test's p-value.
+    diff_plot <- ggplot(matched, aes(x = diff)) +
+      geom_histogram(bins = 60, fill = "#0072B2", color = "white", alpha = 0.85) +
+      geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+      labs(title = paste0("Base vs Anthro: per-route trend difference (", run_label, ")"),
+           subtitle = paste0("n = ", nrow(matched), " matched routes | paired Wilcoxon p = ",
+                             format.pval(overall_test$p.value, digits = 3)),
+           x = "Trend difference (anthro - base, percentage points per year)",
+           y = "Number of routes") +
+      theme_minimal() +
+      theme(plot.title    = element_text(size = 16, face = "bold"),
+            plot.subtitle = element_text(size = 12),
+            axis.title    = element_text(size = 13, face = "bold"))
+
+    diff_plot_file <- file.path(plot_dir, paste0(run_label, "_base_vs_anthro_trend_diff_hist.png"))
+    ggsave(diff_plot_file, diff_plot, width = 8, height = 6, dpi = 150)
+    cat("Saved plot:", basename(diff_plot_file), "\n")
+  }
+}
+
+cat("\n=== Statistical analysis + visualization complete (covariate pipeline, model_tags = ",
+    paste(model_tags, collapse = ", "), ", bird_group = ",
+    if (is.na(bird_group)) "all_groups (NA)" else bird_group, ") ===\n", sep = "")
