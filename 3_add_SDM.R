@@ -77,13 +77,13 @@ for (f in species_files) {
   }
 
   # Look up this species' land cover group (drives raster dir + file prefix)
-  land_cover <- unique(spp_df$Group[spp_df$Code == abbr])
-  if (length(land_cover) != 1 || is.na(land_cover) || land_cover == "") {
+  bird_group <- unique(spp_df$Group[spp_df$Code == abbr])
+  if (length(bird_group) != 1 || is.na(bird_group) || bird_group == "") {
     message("WARNING: No unique Group for code '", abbr, "' — skipping")
     next
   }
 
-  cat("Processing:", abbr, "[", land_cover, "] (", basename(f), ")\n")
+  cat("Processing:", abbr, "[", bird_group, "] (", basename(f), ")\n")
 
   # Initialize new columns
 
@@ -91,26 +91,26 @@ for (f in species_files) {
   sp_routes$rcp85 <- NA
 
   # Build raster directory + file paths
-  rcp45_dir  <- here::here("data", paste0("rcp45_", land_cover))
-  rcp85_dir  <- here::here("data", paste0("rcp85_", land_cover))
+  rcp45_dir  <- here::here("data", paste0("rcp45_", bird_group))
+  rcp85_dir  <- here::here("data", paste0("rcp85_", bird_group))
   rcp45_file <- file.path(rcp45_dir, abbr,
-                          paste0(land_cover, "_", abbr, "_breeding_2025_45_ENSEMBLE_classifiedchange.tif"))
+                          paste0(bird_group, "_", abbr, "_breeding_2025_45_ENSEMBLE_classifiedchange.tif"))
   rcp85_file <- file.path(rcp85_dir, abbr,
-                          paste0(land_cover, "_", abbr, "_breeding_2025_85_ENSEMBLE_classifiedchange.tif"))
+                          paste0(bird_group, "_", abbr, "_breeding_2025_85_ENSEMBLE_classifiedchange.tif"))
 
   # Require both raster files; stop immediately if either is missing.
   # Distinguish "whole group folder missing" from "just this species' file
   # missing" so the error points at the right thing to fix.
   if (!dir.exists(rcp45_dir)) {
     stop("rcp45 raster folder not found: ", rcp45_dir,
-         " (species ", abbr, ", group '", land_cover, "')")
+         " (species ", abbr, ", group '", bird_group, "')")
   }
   if (!file.exists(rcp45_file)) {
     stop("rcp45 raster not found for ", abbr, ": ", rcp45_file)
   }
   if (!dir.exists(rcp85_dir)) {
     stop("rcp85 raster folder not found: ", rcp85_dir,
-         " (species ", abbr, ", group '", land_cover, "')")
+         " (species ", abbr, ", group '", bird_group, "')")
   }
   if (!file.exists(rcp85_file)) {
     stop("rcp85 raster not found for ", abbr, ": ", rcp85_file)

@@ -42,7 +42,7 @@ library(here)
 here::i_am("2_generate_route_trend_csvs.R")
 
 # Settings (match 1_species_iCAR_2010_2025.R) -----------------------------
-land_cover <- "grasslands"
+bird_group <- "grasslands"
 firstYear  <- 2010
 lastYear   <- 2025
 
@@ -59,12 +59,12 @@ spp_df <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                    stringsAsFactors = FALSE)
 
 target_spp <- spp_df %>%
-  filter(Group == land_cover, in_bbs == TRUE) %>%
+  filter(Group == bird_group, in_bbs == TRUE) %>%
   distinct(Common.Name, Code, .keep_all = TRUE) %>%
   arrange(Common.Name)
 
 cat("=== Generate per-route trend CSVs ===\n")
-cat("Group:", land_cover, " | Period:", firstYear, "-", lastYear, "\n")
+cat("Group:", bird_group, " | Period:", firstYear, "-", lastYear, "\n")
 cat("Species in group (n =", nrow(target_spp), ")\n")
 
 # Helper: convert species name to file-safe format ------------------------

@@ -49,13 +49,16 @@ po/*~
 rsconnect/
 
 # Generated model inputs and maps
+data/*.csv
 data/maps/
 data/stan_data/
+data/route_info/
 data/**/*.tif
 output/*.RData
+models/*.exe
 
 # Project output
 output/**/*.csv
-output/*.rds
+output/rds/
 output/**/*.txt
 output/**/*.png
