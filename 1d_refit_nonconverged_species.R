@@ -57,12 +57,15 @@
 ## not 2c's combined output.
 ##
 ## After the standard refit loop (Step 2) and its convergence re-check
-## (Step 3), if Western Meadowlark | anthro is STILL failing -- a known
-## marginal case where gamma1 itself remains just over threshold after the
-## standard 4000/4000, adapt_delta = 0.9 refit -- Step 4 gives it one
-## additional, more aggressive push (8000/8000, adapt_delta = 0.95) via
-## helper/western_meadowlark_refit.R's refit_western_meadowlark(). This
-## replaces the old, separately-run tests/test_western_meadowlark_debug.R.
+## (Step 3), Step 4 gives one additional, more aggressive push (8000/8000,
+## adapt_delta = 0.95) to a small, named set of confirmed "stubborn"
+## species/tags: Sharp-shinned Hawk, Hooded Merganser, Broad-winged Hawk, and
+## Belted Kingfisher (both "base" and "anthro" for each), plus Western
+## Meadowlark, Gray Catbird, Red Crossbill, and Wood Duck (anthro only each)
+## -- via helper/stubborn_species_refit.R's refit_stubborn_species()
+## (validated against all 11 species/tag combos in
+## tests/test_stubborn_species.R). Only whichever of these species/tags
+## are STILL in the failing set after Step 3 actually get refit.
 ##
 ## Step 5 (OPTIONAL, commented out by default) is the route-level-exclusion
 ## drill-down chain -- helper/translate_offending_routes.R then
@@ -70,7 +73,7 @@
 ## after Step 4.
 ##
 ## Finally, Step 6 runs LAST, once every model is set (standard refit + the
-## Western Meadowlark extra push + Step 5, if uncommented): it builds the
+## stubborn-species extra push + Step 5, if uncommented): it builds the
 ## gamma1 lookup table (helper/gamma_lookup.R's gamma_lookup_table()) across
 ## every species so gamma1's own posterior summary/credibility reflects the
 ## POST-refit fits, not the pre-refit ones.
@@ -100,11 +103,15 @@ source(here::here("functions", "covariate_model_fitting.R"))
 model_convergence_skip_autorun <- TRUE
 source(here::here("helper", "model_convergence.R"))
 
-# Pull in refit_western_meadowlark() (Step 4 below) and gamma_lookup_table()
+# Pull in refit_stubborn_species() (Step 4 below) and gamma_lookup_table()
 # (Step 6 below), without triggering either file's own auto-run block -- we
 # call both ourselves, at the right point in this script's own flow.
-western_meadowlark_refit_skip_autorun <- TRUE
-source(here::here("helper", "western_meadowlark_refit.R"))
+# helper/stubborn_species_refit.R is the official version of this (validated
+# against all 8 base/anthro combos in tests/test_stubborn_species.R,
+# plus Western Meadowlark | anthro) -- supersedes
+# helper/western_meadowlark_refit.R, which is no longer sourced here.
+stubborn_species_refit_skip_autorun <- TRUE
+source(here::here("helper", "stubborn_species_refit.R"))
 gamma_lookup_skip_autorun <- TRUE
 source(here::here("helper", "gamma_lookup.R"))
 
@@ -382,43 +389,62 @@ if (nrow(still_failing) > 0) {
 }
 
 # ==========================================================================
-# Step 4: targeted extra-push refit for Western Meadowlark, ONLY if it's
-# still failing after the standard refit above. Western Meadowlark | anthro
-# is a known marginal case (gamma1 itself just over threshold after the
-# standard 4000/4000, adapt_delta = 0.9 refit) -- see helper/
-# western_meadowlark_refit.R for the full rationale. This replaces the old,
-# separately-run tests/test_western_meadowlark_debug.R.
+# Step 4: targeted extra-push refit for a small, named set of confirmed
+# "stubborn" species/tags -- Sharp-shinned Hawk, Hooded Merganser,
+# Broad-winged Hawk, Belted Kingfisher (both "base" and "anthro" for each),
+# and Western Meadowlark, Gray Catbird, Red Crossbill, Wood Duck (anthro
+# only each) -- ONLY for whichever of these are still failing after the
+# standard refit above. These have repeatedly been seen to remain
+# non-convergent even after the standard 4000/4000, adapt_delta = 0.9 refit
+# despite being large, well-sampled species -- see
+# helper/check_flagged_route_sparsity.R for hypothesis testing on why, and
+# helper/stubborn_species_refit.R for the full rationale (validated against
+# all 11 species/tag combos in tests/test_stubborn_species.R).
 # ==========================================================================
-weme_tags_still_failing <- still_failing %>%
-  filter(species == "Western Meadowlark") %>%
-  pull(model)
+stubborn_species_tags <- list(
+  "Sharp-shinned Hawk" = c("base", "anthro"),
+  "Hooded Merganser"   = c("base", "anthro"),
+  "Broad-winged Hawk"  = c("base", "anthro"),
+  "Belted Kingfisher"  = c("base", "anthro"),
+  "Western Meadowlark" = c("anthro"),
+  "Gray Catbird"       = c("anthro"),
+  "Red Crossbill"      = c("anthro"),
+  "Wood Duck"          = c("anthro")
+)
+stubborn_lookup <- bind_rows(lapply(names(stubborn_species_tags), function(sp) {
+  data.frame(species = sp, model = stubborn_species_tags[[sp]], stringsAsFactors = FALSE)
+}))
 
-if (length(weme_tags_still_failing) > 0) {
-  cat("\n=== Step 4: Western Meadowlark extra-push refit (still failing:",
-      paste(weme_tags_still_failing, collapse = ", "), ") ===\n")
+stubborn_still_failing <- still_failing %>% semi_join(stubborn_lookup, by = c("species", "model"))
+
+if (nrow(stubborn_still_failing) > 0) {
+  species_tags_extra_push <- split(stubborn_still_failing$model, stubborn_still_failing$species)
+
+  cat("\n=== Step 4: extra-push refit for stubborn species (still failing:",
+      paste(names(species_tags_extra_push), collapse = ", "), ") ===\n")
 
   # Reuse the model(s) already compiled in Step 1 if available; compile
   # whatever's still missing for the tag(s) actually needed here.
-  model_single_weme <- if (!is.null(model_single)) model_single else {
+  model_single_extra <- if (!is.null(model_single)) model_single else {
     cmdstan_model(here::here("models", "slope_iCAR_route_NB_New_covariate.stan"), stanc_options = list("O1"))
   }
-  model_base_weme <- if ("base" %in% weme_tags_still_failing) {
+  model_base_extra <- if (any(unlist(species_tags_extra_push) == "base")) {
     if (!is.null(model_base)) model_base else {
       cmdstan_model(here::here("models", "slope_iCAR_route_NB_New.stan"), stanc_options = list("O1"))
     }
   } else NULL
 
-  refit_western_meadowlark(rds_dir = rds_dir, route_info_dir = route_info_dir,
-                           stan_data_dir = stan_data_dir,
-                           cmdstanr_output_dir = cmdstanr_output_dir,
-                           firstYear = firstYear, lastYear = lastYear, strat = strat,
-                           covariate_lookups = covariate_lookups,
-                           model_single = model_single_weme, model_base = model_base_weme,
-                           model_tags = weme_tags_still_failing)
+  refit_stubborn_species(rds_dir = rds_dir, route_info_dir = route_info_dir,
+                         stan_data_dir = stan_data_dir,
+                         cmdstanr_output_dir = cmdstanr_output_dir,
+                         firstYear = firstYear, lastYear = lastYear, strat = strat,
+                         covariate_lookups = covariate_lookups,
+                         model_single = model_single_extra, model_base = model_base_extra,
+                         species_tags = species_tags_extra_push)
 
   # Re-check convergence once more so the final table/summary reflects the
   # extra push too, not just the standard refit.
-  cat("\n=== Re-checking convergence after Western Meadowlark extra-push refit ===\n")
+  cat("\n=== Re-checking convergence after stubborn-species extra-push refit ===\n")
   convergence_after <- model_convergence_table(target_spp = target_spp, model_tags = model_tags,
                                                firstYear = firstYear, lastYear = lastYear,
                                                rds_dir = rds_dir,
@@ -432,7 +458,8 @@ if (length(weme_tags_still_failing) > 0) {
     options(na.print = old_na_print)
   }
 } else {
-  cat("\nWestern Meadowlark already converged (or wasn't in the failing set) -- skipping the extra-push step.\n")
+  cat("\nNone of the stubborn species/tags (", paste(stubborn_lookup$species, "|", stubborn_lookup$model, collapse = ", "),
+      ") are in the failing set -- skipping the extra-push step.\n", sep = "")
 }
 
 # ==========================================================================
