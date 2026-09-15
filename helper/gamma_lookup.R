@@ -33,12 +33,14 @@
 ##
 ##   2. Standalone: Rscript helper/gamma_lookup.R (or source() from the
 ##      console with nothing pre-set) falls back to reading
-##      spp_names_codes_group_aou.csv itself with default settings
-##      (bird_group = "grasslands", the grasslands 4-tag model_tags), using
-##      the same `if (!exists(...))` override pattern already used elsewhere
-##      in this project (species_filter in 1c/2c, model_tag in 4c) -- set
-##      `bird_group <- "..."` / `model_tags <- c(...)` before sourcing to
-##      run it for a different group.
+##      spp_names_codes_group_aou.csv itself with default settings --
+##      bird_group = NA (pool EVERY group/species in one run, matching how
+##      1c/2c/4c now operate across all 12 groups at once) and
+##      model_tags = c("base", "anthro") (the project's current tags) --
+##      using the same `if (!exists(...))` override pattern already used
+##      elsewhere in this project (species_filter in 1c/2c, model_tag in 4c)
+##      -- set `bird_group <- "..."` (one Group value) / `model_tags <-
+##      c(...)` before sourcing to restrict to one group/different tags.
 ## =============================================================================
 
 library(dplyr)
@@ -136,6 +138,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
                                write_csv = TRUE) {
 
   model_tags_gamma <- setdiff(model_tags, "base")  # base has no gamma1
+  has_group <- "Group" %in% names(target_spp)
 
   cat("=== gamma1 lookup ===\n")
   cat("Group:", bird_group, " | Period:", firstYear, "-", lastYear, "\n")
@@ -152,6 +155,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
       if (!is.null(r)) {
         r$species      <- sp
         r$species_code <- sp_code
+        if (has_group) r$group <- target_spp$Group[i]
         rows[[paste(sp, tag, sep = " | ")]] <- r
       }
     }
@@ -172,7 +176,7 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
   # median, q5, q95, rhat, ess_bulk, ess_tail) come right after model, if
   # present -- falls back gracefully if posterior::summarise_draws() used a
   # different default measure set.
-  preferred_order <- c("species", "species_code", "model",
+  preferred_order <- c("species", "species_code", "model", "group",
                        "mean", "median", "sd", "mad", "q5", "q95",
                        "rhat", "ess_bulk", "ess_tail",
                        "model_max_rhat", "model_min_ess_bulk", "model_converged")
@@ -255,32 +259,40 @@ gamma_lookup_table <- function(target_spp, model_tags, firstYear, lastYear,
 ## Auto-run: call gamma_lookup_table() using whatever target_spp/model_tags/
 ## firstYear/lastYear/rds_dir/bird_group ALREADY EXIST in the calling
 ## environment (e.g. 1c_species_iCAR_covariates.R's, if this file is
-## source()'d from the end of a 1c run) -- filling in grasslands defaults
-## via `if (!exists(...))` for any not already set, so this also still works
-## standalone (Rscript helper/gamma_lookup.R) exactly as before.
+## source()'d from the end of a 1c run) -- filling in defaults via
+## `if (!exists(...))` for any not already set, so this also still works
+## standalone (Rscript helper/gamma_lookup.R).
+##
+## Default bird_group is NA (pool ALL species across all 12 groups in one
+## run), matching how 1c_species_iCAR_covariates.R/2c/4c now operate (see
+## 4c_statistical_analysis_and_visualization_covariates.R's header -- "1c/2c
+## now fit and combine EVERY species across all 12 groups in one run"). Set
+## bird_group <- "grasslands" (or any Group value) before sourcing to
+## restrict to one group instead.
+##
 ## Set `gamma_lookup_skip_autorun <- TRUE` before sourcing to load just the
-## two functions above without running anything.
+## functions above without running anything.
 ## ==========================================================================
 if (!exists("gamma_lookup_skip_autorun") || !isTRUE(gamma_lookup_skip_autorun)) {
 
-  if (!exists("bird_group")) bird_group <- "grasslands"
+  if (!exists("bird_group")) bird_group <- NA   # NA -> pool every group; or set to one Group value
   if (!exists("firstYear"))  firstYear  <- 2010
   if (!exists("lastYear"))   lastYear   <- 2025
-  if (!exists("model_tags")) model_tags <- c("base", "grassland_habitat",
-                                             "grassland_anthro",
-                                             "grassland_habitat_to_anthro")
+  if (!exists("model_tags")) model_tags <- c("base", "anthro")
   if (!exists("rds_dir"))    rds_dir    <- here::here("output", "rds")
+
+  run_label <- if (is.na(bird_group)) "all_species" else bird_group
 
   if (!exists("target_spp")) {
     spp_df_gl <- read.csv(here::here("data", "spp_names_codes_group_aou.csv"),
                           stringsAsFactors = FALSE)
     target_spp <- spp_df_gl %>%
-      filter(Group == bird_group, in_bbs == TRUE) %>%
+      { if (is.na(bird_group)) filter(., in_bbs == TRUE) else filter(., Group == bird_group, in_bbs == TRUE) } %>%
       distinct(Common.Name, Code, .keep_all = TRUE) %>%
       arrange(Common.Name)
   }
 
   gamma_lookup_table(target_spp = target_spp, model_tags = model_tags,
                      firstYear = firstYear, lastYear = lastYear,
-                     rds_dir = rds_dir, bird_group = bird_group)
+                     rds_dir = rds_dir, bird_group = run_label)
 }

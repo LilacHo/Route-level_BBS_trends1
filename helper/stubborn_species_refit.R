@@ -48,8 +48,9 @@
 ##      drift out of sync with what 1d was actually just run with.
 ##   2. Standalone: Rscript helper/stubborn_species_refit.R (or source() from
 ##      the console with nothing pre-set) sources its own dependencies and
-##      runs the extra-push refit for the eight default stubborn species/tags
-##      against this project's normal production output/rds, data/route_info,
+##      runs the extra-push refit for the twelve default stubborn species/tag
+##      combos (8 species) against this project's normal production
+##      output/rds, data/route_info,
 ##      data/stan_data directories.
 ## =============================================================================
 
@@ -72,8 +73,8 @@
 #'   any species)
 #' @param species_tags named list, names are Common.Name values, each element
 #'   a character vector of which tag(s) of THAT species to check/refit.
-#'   Defaults to this project's eight confirmed stubborn species/tags (see
-#'   header above).
+#'   Defaults to this project's twelve confirmed stubborn species/tag combos
+#'   (8 species; see header above).
 #' @param iter_warmup,iter_sampling,adapt_delta,max_treedepth,show_exceptions
 #'   passed straight through to fit_one_covariate_model() -- defaults here
 #'   are pushed further than 1d's standard refit (4000/4000, adapt_delta =
@@ -217,7 +218,7 @@ refit_stubborn_species <- function(rds_dir, route_info_dir, stan_data_dir,
 ## first, matching the pattern used for helper/gamma_lookup.R and
 ## helper/model_convergence.R). Builds its own dependencies/settings from
 ## this project's normal production defaults, and runs the extra-push refit
-## for the eight default stubborn species/tags.
+## for the twelve default stubborn species/tag combos (8 species).
 ## ==========================================================================
 if (!exists("stubborn_species_refit_skip_autorun") || !isTRUE(stubborn_species_refit_skip_autorun)) {
 
