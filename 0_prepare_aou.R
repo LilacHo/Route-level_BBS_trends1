@@ -110,3 +110,27 @@ cat("\nSpecies with bbsBayes2 taxonomy:", sum(!is.na(spp_taxa$genus)), "of", nro
 
 write.csv(spp_taxa, taxa_csv, row.names = FALSE)
 cat("Saved:", taxa_csv, "\n")
+
+## Add IUCN Red List status (redlistCategory, redlistPopulationTrend)
+## Match "genus species" to scientificName in the Red List assessments download
+redlist_dir <- "data/redlist_species_data_20260921"
+redlist_csv <- "data/spp_names_codes_group_aou_taxa_redlist.csv"
+
+assessments <- read.csv(file.path(redlist_dir, "assessments.csv"), stringsAsFactors = FALSE) %>%
+  select(scientificName, redlistCategory, redlistPopulationTrend = populationTrend) %>%
+  distinct(scientificName, .keep_all = TRUE)
+
+spp_redlist <- spp_taxa %>%
+  mutate(scientificName = ifelse(is.na(genus) | is.na(species), NA_character_,
+                                 paste(genus, species))) %>%
+  left_join(assessments, by = "scientificName") %>%
+  select(-scientificName)
+
+no_redlist <- spp_redlist %>% filter(is.na(redlistCategory)) %>% distinct(Common.Name, genus, species)
+cat("\nSpecies matched to Red List assessments:",
+    sum(!is.na(spp_redlist$redlistCategory)), "of", nrow(spp_redlist), "\n")
+cat("Species with no Red List match:\n")
+cat(paste(" -", no_redlist$Common.Name, "(", no_redlist$genus, no_redlist$species, ")"), sep = "\n")
+
+write.csv(spp_redlist, redlist_csv, row.names = FALSE)
+cat("\nSaved:", redlist_csv, "\n")
