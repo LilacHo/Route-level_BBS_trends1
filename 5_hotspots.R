@@ -3,14 +3,35 @@
 # Maps route x species instances where the SDM classified-change model and
 # the route-level population trend from the iCAR model DISAGREE -- two such
 # mismatches ("sections" below), each run for every model_tag x scenario
-# combination:
+# combination. Two mismatch-definition MODES are supported (mismatch_mode
+# setting below), each writing to its own subfolder so runs don't collide:
 #
-#   1. contraction_stable_or_increasing -- SDM predicts CONTRACTION but the
-#      route trend is stable or increasing (trend >= stable_threshold).
-#   2. expansion_decreasing -- the mirror-image mismatch: SDM predicts
-#      EXPANSION but the route trend is DECREASING (trend < decreasing_threshold).
+#   "credible"  -- a route only counts if its 90% posterior credible
+#                  interval on trend (trend_lci/trend_uci, from 2c) excludes
+#                  zero in the direction that disagrees with the SDM. This
+#                  is the same "credible effect" convention the pipeline
+#                  already uses for gamma1 (gamma1_excludes_zero in 2c),
+#                  applied here to trend instead.
+#   "threshold" -- a route counts if its point-estimate trend magnitude
+#                  clears a fixed %/year cutoff (threshold_magnitude below,
+#                  mirrored for both directions), regardless of how wide its
+#                  credible interval is.
 #
-# Both ask the same underlying question -- where does the climate-
+# See the project record/methods note for the full reasoning: a fixed
+# %/year magnitude threshold answers "is this ecologically meaningful,"
+# while credibility answers "do we trust this specific estimate" -- two
+# different questions the model already lets us ask separately, which is
+# why both modes are kept available here rather than picking one.
+#
+#   1. contraction_credibly_increasing / contraction_increasing_<X>pct --
+#      SDM predicts CONTRACTION but the route trend is credibly increasing
+#      (trend_lci > 0) / increasing by at least X%/year (trend >= X).
+#   2. expansion_credibly_decreasing / expansion_decreasing_<X>pct -- the
+#      mirror-image mismatch: SDM predicts EXPANSION but the route trend is
+#      credibly decreasing (trend_uci < 0) / decreasing by at least X%/year
+#      (trend < -X).
+#
+# Both sections ask the same underlying question -- where does the climate-
 # suitability model's directional prediction disagree with what the route
 # is actually doing -- just for opposite (predicted direction, observed
 # direction) pairs. These are candidate "hotspots": places worth a closer
@@ -46,12 +67,14 @@
 #
 # Reads:  output/species_routes_covariates/per_species_sdm/*_route_trends_sdm.csv
 #         (written by 3c_add_SDM_covariates.R)
-# Writes (per model_tag x scenario x mismatch-section):
-#         output/species_routes_covariates/hotspots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_routes.csv
-#         output/species_routes_covariates/hotspots/<run_label>_<model_tag>_<scenario>_<section>_route_summary.csv
-#         output/species_routes_covariates/hotspots/plots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_scatter_map.png
-#         output/species_routes_covariates/hotspots/plots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_grid_heatmap.png
-#         output/species_routes_covariates/hotspots/plots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_bubble_map.png
+# Writes (per model_tag x scenario x mismatch-section), under a subfolder
+# named after mismatch_mode ("credible" or "threshold") so the two modes'
+# outputs never collide:
+#         output/species_routes_covariates/hotspots/<mismatch_mode>/<run_label>_<model_tag>_<scenario>_<section>_mismatch_routes.csv
+#         output/species_routes_covariates/hotspots/<mismatch_mode>/<run_label>_<model_tag>_<scenario>_<section>_route_summary.csv
+#         output/species_routes_covariates/hotspots/<mismatch_mode>/plots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_scatter_map.png
+#         output/species_routes_covariates/hotspots/<mismatch_mode>/plots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_grid_heatmap.png
+#         output/species_routes_covariates/hotspots/<mismatch_mode>/plots/<run_label>_<model_tag>_<scenario>_<section>_mismatch_bubble_map.png
 
 library(here)
 library(tidyverse)
@@ -67,14 +90,20 @@ bird_group <- NA   # one of the 12 Group values in
 model_tags <- c("base", "anthro")   # loop over both, as 4c does.
 scenarios  <- c("rcp45", "rcp85")   # loop over both climate scenarios.
 
-# Section 1 (contraction_stable_or_increasing): trend >= stable_threshold
-# counts as "stable or increasing". 0 = strictly non-declining; lower it
-# (e.g. -1) to also treat a near-flat-but-slightly-negative trend as "stable".
-stable_threshold <- 0
+# "credible" -- mismatch = 90% CI excludes zero (trend_lci/trend_uci).
+# "threshold" -- mismatch = point-estimate trend magnitude >= threshold_magnitude
+# (mirrored for both directions). See the header comment for the reasoning
+# behind keeping both modes available rather than picking one.
+mismatch_mode <- "credible"
 
-# Section 2 (expansion_decreasing): trend < decreasing_threshold counts as
-# "decreasing".
-decreasing_threshold <- 0
+# Only used when mismatch_mode == "threshold": %/year. Applied as
+# trend >= +threshold_magnitude (contraction section, "increasing") and
+# trend < -threshold_magnitude (expansion section, "decreasing"). 1.2 is
+# PIF's Watch List "50% cumulative loss since the mid-1960s BBS baseline"
+# criterion, annualized (1 - 0.5^(1/58) ~= 1.2%/year) and mirrored to the
+# increasing direction rather than combining it with a differently-derived
+# benchmark for the other direction -- see the project record/methods note.
+threshold_magnitude <- 1.2
 
 # Same convention as 4c: drop routes whose own alpha[r]/beta[r] didn't
 # individually meet Rhat < 1.01 & bulk ESS > 400 before mapping anything.
@@ -87,8 +116,12 @@ require_route_converged <- TRUE
 grid_bin_size_deg   <- 1.5
 min_rows_per_cell   <- 5
 
+if (!mismatch_mode %in% c("credible", "threshold")) {
+  stop("mismatch_mode must be 'credible' or 'threshold', got: '", mismatch_mode, "'")
+}
+
 in_dir  <- here::here("output", "species_routes_covariates", "per_species_sdm")
-out_dir <- here::here("output", "species_routes_covariates", "hotspots")
+out_dir <- here::here("output", "species_routes_covariates", "hotspots", mismatch_mode)
 plot_dir <- file.path(out_dir, "plots")
 if (!dir.exists(out_dir))  dir.create(out_dir,  recursive = TRUE)
 if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
@@ -134,22 +167,43 @@ group_category <- function(x) {
   )
 }
 
-# The two mismatch sections described in the header comment. Each ties an
-# SDM category to a trend test and to the labels used in filenames/titles/
-# legends below -- adding another section (e.g. "stable but strongly
-# trending") only requires one more entry here, the loop below is generic.
-mismatch_definitions <- list(
-  list(key = "contraction_stable_or_increasing",
-       category = "Contraction",
-       test = function(trend) trend >= stable_threshold,
-       label = "Contraction-predicted but stable/increasing",
-       rate_label = "Stable/increasing rate\n(of contraction-\npredicted species)"),
-  list(key = "expansion_decreasing",
-       category = "Expansion",
-       test = function(trend) trend < decreasing_threshold,
-       label = "Expansion-predicted but decreasing",
-       rate_label = "Decreasing rate\n(of expansion-\npredicted species)")
-)
+# The two mismatch sections described in the header comment, built for
+# whichever mismatch_mode is active. Each ties an SDM category to a test
+# (on the filtered, category-matched tibble, so it can reach trend_lci/
+# trend_uci as well as trend) and to the labels used in filenames/titles/
+# legends below -- adding another section only requires one more entry,
+# the loop below is generic.
+if (mismatch_mode == "credible") {
+  mismatch_definitions <- list(
+    list(key = "contraction_credibly_increasing",
+         category = "Contraction",
+         test = function(d) d$trend_lci > 0,
+         label = "Contraction-predicted but credibly increasing",
+         rate_label = "Credibly increasing rate\n(of contraction-\npredicted species)")
+    # Expansion section paused to focus on contraction; restore by adding a
+    # comma after the entry above and uncommenting:
+    # list(key = "expansion_credibly_decreasing",
+    #      category = "Expansion",
+    #      test = function(d) d$trend_uci < 0,
+    #      label = "Expansion-predicted but credibly decreasing",
+    #      rate_label = "Credibly decreasing rate\n(of expansion-\npredicted species)")
+  )
+} else {
+  mismatch_definitions <- list(
+    list(key = paste0("contraction_increasing_", threshold_magnitude, "pct"),
+         category = "Contraction",
+         test = function(d) d$trend >= threshold_magnitude,
+         label = paste0("Contraction-predicted but increasing ≥", threshold_magnitude, "%/yr"),
+         rate_label = paste0("≥", threshold_magnitude, "%/yr increasing rate\n(of contraction-\npredicted species)"))
+    # Expansion section paused to focus on contraction; restore by adding a
+    # comma after the entry above and uncommenting:
+    # list(key = paste0("expansion_decreasing_", threshold_magnitude, "pct"),
+    #      category = "Expansion",
+    #      test = function(d) d$trend < -threshold_magnitude,
+    #      label = paste0("Expansion-predicted but decreasing ≥", threshold_magnitude, "%/yr"),
+    #      rate_label = paste0("≥", threshold_magnitude, "%/yr decreasing rate\n(of expansion-\npredicted species)"))
+  )
+}
 
 # US-states background map, contiguous US only (matches this project's route
 # coverage: lower 48, no Alaska/Hawaii/Canada) -- bundled with the already-
@@ -159,6 +213,16 @@ us_states <- st_transform(us_states, 4326)
 us_bbox <- st_bbox(us_states)
 map_xlim <- c(us_bbox["xmin"] - 1, us_bbox["xmax"] + 1)
 map_ylim <- c(us_bbox["ymin"] - 1, us_bbox["ymax"] + 1)
+
+# Shown as a small caption on every plot rather than folded into the
+# subtitle, which is already busy with route/species counts and would
+# otherwise run past the plot edge.
+mismatch_caption <- if (mismatch_mode == "credible") {
+  "Mismatch criterion: route's 90% posterior credible interval on trend excludes zero"
+} else {
+  paste0("Mismatch criterion: point-estimate trend magnitude ≥ ", threshold_magnitude,
+        "%/year (fixed threshold; credible interval not required)")
+}
 
 # Scatter map: one point per mismatching (species, route) pair -------------
 make_scatter_map <- function(pts, title, subtitle, file_path) {
@@ -175,10 +239,11 @@ make_scatter_map <- function(pts, title, subtitle, file_path) {
     scale_color_viridis_c(option = "C", name = "Route trend\n(%/yr)",
                           limits = color_lims, oob = scales::squish) +
     coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
-    labs(title = title, subtitle = subtitle, x = NULL, y = NULL) +
+    labs(title = title, subtitle = subtitle, caption = mismatch_caption, x = NULL, y = NULL) +
     theme_minimal() +
     theme(plot.title    = element_text(size = 16, face = "bold"),
           plot.subtitle = element_text(size = 11),
+          plot.caption  = element_text(size = 8, color = "grey40"),
           axis.text     = element_text(size = 8))
   ggsave(file_path, p, width = 9, height = 6.5, dpi = 150)
   cat("Saved plot:", basename(file_path), "\n")
@@ -214,13 +279,14 @@ make_grid_heatmap <- function(category_pts, rate_label, title, subtitle, file_pa
                          labels = scales::percent, limits = c(0, 1)) +
     geom_sf(data = us_states, fill = NA, color = "grey30", linewidth = 0.3) +
     coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
-    labs(title = title,
-         subtitle = paste0(subtitle, " | ", grid_bin_size_deg, "° grid cells, n >= ",
-                           min_rows_per_cell, " predicted-category rows each"),
+    labs(title = title, subtitle = subtitle,
+         caption = paste0(mismatch_caption, "\n", grid_bin_size_deg, "° cells, n ≥ ",
+                          min_rows_per_cell, " predicted-category rows each"),
          x = NULL, y = NULL) +
     theme_minimal() +
     theme(plot.title    = element_text(size = 16, face = "bold"),
           plot.subtitle = element_text(size = 10),
+          plot.caption  = element_text(size = 8, color = "grey40"),
           axis.text     = element_text(size = 8))
   ggsave(file_path, p, width = 9, height = 6.5, dpi = 150)
   cat("Saved plot:", basename(file_path), "\n")
@@ -241,10 +307,11 @@ make_bubble_map <- function(route_summary, rate_label, title, subtitle, file_pat
                           labels = scales::percent, limits = c(0, 1)) +
     scale_size_continuous(name = "Species\nevaluated", range = c(0.6, 4)) +
     coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
-    labs(title = title, subtitle = subtitle, x = NULL, y = NULL) +
+    labs(title = title, subtitle = subtitle, caption = mismatch_caption, x = NULL, y = NULL) +
     theme_minimal() +
     theme(plot.title    = element_text(size = 16, face = "bold"),
           plot.subtitle = element_text(size = 11),
+          plot.caption  = element_text(size = 8, color = "grey40"),
           axis.text     = element_text(size = 8))
   ggsave(file_path, p, width = 9, height = 6.5, dpi = 150)
   cat("Saved plot:", basename(file_path), "\n")
@@ -261,17 +328,17 @@ for (model_tag in model_tags) {
   for (scenario in scenarios) {
 
     analysis <- target_sdm %>%
-      filter(!is.na(.data[[scenario]]), !is.na(trend)) %>%
-      transmute(species, species_code, group, route, latitude, longitude, trend,
+      filter(!is.na(.data[[scenario]]), !is.na(trend), !is.na(trend_lci), !is.na(trend_uci)) %>%
+      transmute(species, species_code, group, route, latitude, longitude,
+                trend, trend_lci, trend_uci,
                 category = group_category(.data[[scenario]]))
 
     for (def in mismatch_definitions) {
       cat("\n----- model_tag:", model_tag, "| scenario:", scenario,
           "| section:", def$key, "-----\n")
 
-      category_df <- analysis %>%
-        filter(category == def$category) %>%
-        mutate(mismatch = def$test(trend))
+      category_df <- analysis %>% filter(category == def$category)
+      category_df$mismatch <- def$test(category_df)
 
       if (nrow(category_df) == 0) {
         message("  No ", def$category, "-category rows for ", model_tag, "/", scenario,
