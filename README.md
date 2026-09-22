@@ -16,9 +16,13 @@ Run in order:
 
 Adds AOU numeric species codes to the target species list and checks each species against `bbsBayes2`'s species table.
 
-- Reads: `data/spp_names_codes_group.csv`
-- Writes: `data/spp_names_codes_group_aou.csv`
+- Reads: `data/spp_names_codes_group.csv` (and `data/redlist_species_data_20260921/assessments.csv` for the Red List step)
+- Writes: `data/spp_names_codes_group_aou.csv`, then `data/spp_names_codes_group_aou_taxa.csv` (adds `order`, `family`, `genus`, `species` from `bbsBayes2`), then `data/spp_names_codes_group_aou_taxa_redlist.csv` (adds `redlistScientificName`, `redlistCategory`, `redlistPopulationTrend` from the IUCN Red List assessments, matched on `genus species`, with a manual lookup table in the script for names IUCN spells differently; unmatched species are `NA`)
+- If `data/spp_names_codes_group_aou.csv` already exists, the AOU matching is skipped and the taxa and Red List steps build on it.
+- At the start the script prints any repeated `Code` in `data/spp_names_codes_group.csv` (no check is made for repeated names).
 - Original to this repo — no equivalent in the source project.
+
+**Species listed in two groups.** Seven species appear twice in `data/spp_names_codes_group.csv`, once as `coastal` and once as `waterbirds`: Black Turnstone (BLTU), Little Gull (LIGU), Mew Gull (MEGU), Rock Sandpiper (ROSA), Semipalmated Plover (SEPL), Surf Scoter (SUSC) and Willet (WILL). Their `data/rcp45_coastal/<code>/` and `data/rcp85_coastal/<code>/` SDM raster folders are empty, while the `waterbirds` folders have the rasters, so the `coastal` entry has no SDM data behind it and would only duplicate the species. `0_prepare_aou.R` therefore drops the `coastal` rows for these seven species when building `data/spp_names_codes_group_aou.csv`. The `_taxa` and `_taxa_redlist` files are built from the result, so each species keeps its single `waterbirds` row. `data/spp_names_codes_group.csv` is left unchanged as the original input.
 
 ### 1_species_iCAR_2010_2025.R
 
