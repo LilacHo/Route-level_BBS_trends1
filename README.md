@@ -29,6 +29,7 @@ Run in order:
        -> 1d_refit_nonconverged_species.R   (optional, only if some fits fail convergence)
   -> 2c_generate_route_trend_csvs_covariates.R
   -> 3c_add_SDM_covariates.R
+       -> 3d_visualization_map.R   (per-species range-shift + trend maps)
   -> 4c_statistical_analysis_and_visualization_covariates.R
 ```
 
@@ -91,6 +92,16 @@ Adds `rcp45`/`rcp85` climate-scenario columns to each per-species-per-model rout
 - Raster path is resolved from each row's `group` column (written directly by 2c): `data/rcp{45,85}_<group>/<code>/<group>_<code>_breeding_2025_{45,85}_ENSEMBLE_classifiedchange.tif`
 - A missing raster for one species/group is expected (not every group's rasters may exist yet) — that file is skipped with a warning, not treated as a fatal error
 - Raster value legend (Bateman et al. 2020): 0 = never suitable, 1 = extirpation, 2 = worsening, 3 = slightly worsening, 4 = neutral, 5 = slightly improving, 6 = improving, 7 = colonization
+- **Known raster data bug (hardcoded fix in place):** the RCP4.5 raster for exactly 5 species — Acorn Woodpecker (ACWO), American Dipper (AMDI), Black-headed Grosbeak (BHGR), Willet (WILL), Wood Duck (WODU) — stores its 0-7 category codes scaled x10000 (e.g. `40000` instead of `4`) in the raw `.tif` file itself, not something introduced by this script or by `bbsBayes2`/`terra`. Confirmed with `archive/check_sdm.R` (a read-only diagnostic that inspects the raw raster and reproduces the extraction independently). This script now divides by 10000 for just these 5 species (`rcp45_scale_bug_species`, defined near the top) before writing `rcp45`, so a full rerun of `3c` produces correct values from the start. `3d_visualization_map.R` has its own independent version of this same fix (see below). If a new species ever shows this same pattern, confirm with `archive/check_sdm.R` first, then add its code to `rcp45_scale_bug_species` here.
+
+### 3d_visualization_map.R
+
+One map per species x model (`base`/`anthro`) x scenario (RCP 4.5/8.5): the SDM range shift as filled area (Contraction = raster 1-3, Stable = 4, Expansion = 5-7; 0 = never suitable, not drawn) with each route's trend as a point (colour = Decrease/Increase/Not significant by whether the 90% CI excludes zero, size = |annual % change|, squished at `size_limit`). Respects `require_route_converged` like 4c. Drawn in the rasters' own Albers projection. The view fits each species' routes plus the central range cells (`extent_trim`).
+
+- Reads: `output/species_routes_covariates/per_species_sdm/*_route_trends_sdm.csv`, the same `data/rcp{45,85}_<group>/...classifiedchange.tif` rasters 3c uses
+- Writes: `output/species_maps/<model>/<scenario>/<species>_<model>_<scenario>_<firstYear>_<lastYear>.png` and `output/species_maps/map_manifest_<firstYear>_<lastYear>.csv`
+- Resumable (existing maps skipped unless `overwrite <- TRUE`); a missing raster skips that species/scenario with a warning. `only_species` restricts the run for testing.
+- Independently guards against the same RCP4.5 x10000 raster scaling bug noted under `3c` above: `prepare_range()` checks each raster's actual max value and rescales (`round(r / 10000)`) whenever it exceeds 7, rather than hardcoding the 5 known species codes — so a map is never silently drawn blank for this reason, for these species or any other.
 
 ### 4c_statistical_analysis_and_visualization_covariates.R
 
@@ -109,7 +120,7 @@ Parts, per model tag:
 
 After the loop:
 
-- **Part 5** — base vs. anthro paired trend comparison. Since both models are fit on the identical reduced dataset per species, a route's `base` trend and `anthro` trend are a natural PAIRED comparison (same species, same route, same underlying counts). Uses a paired Wilcoxon signed-rank test overall and per species (BH-adjusted), writes a stats `.txt`, a per-species results `.csv`, and a histogram of the per-route trend difference.
+- **Part 5** — base vs. anthro paired trend comparison. Since both models are fit on the identical reduced dataset per species, a route's `base` trend and `anthro` trend are a natural PAIRED comparison (same species, same route, same underlying counts). Before joining, checks that `(species, species_code, group, route)` is a unique key in each model's trend table — a duplicate (e.g. from a stale per-species CSV left over under an old species-name spelling) would otherwise silently cartesian-expand via the join, inflating the matched-route count; if found, PART 5 stops and writes a diagnostic CSV identifying the offending species/routes instead of proceeding on ambiguous data. Uses a paired Wilcoxon signed-rank test overall and per species (BH-adjusted), writes a stats `.txt`, a per-species results `.csv`, and a histogram of the per-route trend difference.
 
 - Reads: `output/species_routes_covariates/per_species_sdm/*_route_trends_sdm.csv`
 - Writes: `output/species_routes_covariates/per_species_sdm_stats/` (stats `.txt`/`.csv`), `output/species_routes_covariates/per_species_sdm_plot/` (violin `.png`s, base-vs-anthro histogram)
@@ -131,8 +142,14 @@ Standalone scripts for inspecting already-fitted output without re-fitting anyth
 - **`diagnose_nonconvergence.R`** — for every species/tag currently failing whole-model convergence, classifies which specific parameter(s) are driving the failure (`route_alpha`, `route_beta`, `gamma1`, or `hyperparameter_sd`/`other`) instead of just reporting the single worst Rhat/ESS. Distinguishes one sparsely-sampled route (often benign) from gamma1 or many routes being poorly mixed (more serious). Writes `output/files/nonconvergence_diagnosis_<firstYear>_<lastYear>.csv`.
 - **`translate_offending_routes.R`** — translates `diagnose_nonconvergence.R`'s route-level offenders (internal `routeF` index) into real BBS route IDs and coordinates via each species/tag's own `route_info.rds`. The concrete follow-through on flagging/excluding specific routes rather than dropping an entire species. Writes `output/files/nonconvergence_flagged_routes_<firstYear>_<lastYear>.csv` (+ a per-species/tag summary).
 - **`check_flagged_route_sparsity.R`** — for routes flagged by `translate_offending_routes.R`, tests whether they're more count-volatile (year-to-year CV) or more mismatched from their spatial neighbors' average count level than a species' other (converged) routes, via two-sample Wilcoxon rank-sum tests. Writes `output/files/flagged_route_sparsity_{check,detail}_<firstYear>_<lastYear>.csv`.
-- **`stubborn_species_refit.R`** — the targeted extra-push refit (8000/8000 iterations, `adapt_delta = 0.95`) for the eight confirmed stubborn species/tags that remain non-convergent even after the standard 1d refit: Sharp-shinned Hawk, Hooded Merganser, Broad-winged Hawk, Belted Kingfisher (both `base` and `anthro` each), and Western Meadowlark, Gray Catbird, Red Crossbill, Wood Duck (`anthro` only each), via `refit_stubborn_species()`. Called automatically from `1d_refit_nonconverged_species.R`'s Step 4; can also run standalone. 
+- **`stubborn_species_refit.R`** — the targeted extra-push refit (8000/8000 iterations, `adapt_delta = 0.95`) for the twelve confirmed stubborn species/tag combos (8 species) that remain non-convergent even after the standard 1d refit: Sharp-shinned Hawk, Hooded Merganser, Broad-winged Hawk, Belted Kingfisher (both `base` and `anthro` each), and Western Meadowlark, Gray Catbird, Red Crossbill, Wood Duck (`anthro` only each), via `refit_stubborn_species()`. Called automatically from `1d_refit_nonconverged_species.R`'s Step 4; can also run standalone. 
 - **`route_info.R`** — backfills `data/route_info/*.rds` from an existing `stan_data.RData`, for any run where the route_info save didn't happen alongside the stan_data save.
+
+## archive/ — retired one-off scripts, kept for reference
+
+Not part of the pipeline and never run as part of it — scripts that answered a specific question once and are kept only so the reasoning/evidence behind a fix elsewhere isn't lost.
+
+- **`check_sdm.R`** — read-only diagnostic that inspects the raw `rcp45`/`rcp85` `.tif` rasters for a given set of species directly (datatype, scale/offset, category frequency table) and independently reproduces `3c_add_SDM_covariates.R`'s `extract()` step against each species' own routes. Used to confirm the RCP4.5 x10000 scaling bug documented under `3c` above was in the source raster files themselves, not in any extraction code. Re-run it (`Rscript archive/check_sdm.R`) if a new species is ever suspected of the same issue, before adding it to `3c`'s `rcp45_scale_bug_species`.
 
 ## Convergence concepts (three distinct axes, deliberately not conflated)
 
