@@ -70,9 +70,18 @@ size_limit <- 10
 # and keeps the dissolved range polygons light.
 target_cols <- 2200
 
-# The plotted extent covers the routes plus the central (1 - 2 * extent_trim)
-# of the range cells' coordinates, so scattered outlier patches far from the
-# main range don't stretch the map into empty space. 0 = use the full range.
+# Zoom: the map never shows more than the contiguous (lower-48) US, and zooms
+# in further to just the routes + range that fall inside it (so a Southwest
+# species gets a Southwest map, not a whole-CONUS map). Canada/Alaska/Mexico
+# parts of a range and routes outside the lower 48 are cropped out of the
+# view. A species with no routes and no range inside the lower 48 (e.g. an
+# Alaska-only bird) falls back to the whole-range extent below.
+conus_zoom <- TRUE
+
+# Fallback extent (conus_zoom = FALSE, or nothing inside the lower 48): the
+# routes plus the central (1 - 2 * extent_trim) of the range cells'
+# coordinates, so scattered outlier patches far from the main range don't
+# stretch the map into empty space. 0 = use the full range.
 extent_trim <- 0.01
 
 fig_width <- 10   # inches; height follows the plotted extent's aspect ratio
@@ -96,9 +105,19 @@ shift_labels <- names(shift_cols)
 map_crs <- "+proj=aea +lat_0=40 +lon_0=-96 +lat_1=20 +lat_2=60 +x_0=0 +y_0=0 +ellps=GRS80 +units=m +no_defs"
 
 states_map <- bbsBayes2::load_map("prov_state") %>% st_transform(map_crs)
+# Dissolved US outline, drawn thicker than the state/province lines.
+us_outline <- states_map %>%
+  filter(country_code == "US") %>%
+  st_make_valid() %>%
+  st_union() %>%
+  st_make_valid()
 world_map  <- spData::world %>%
   st_transform(map_crs) %>%
   filter(!iso_a2 %in% c("US", "CA"))   # US/Canada are drawn from states_map
+
+# Lower-48 bounding box (map CRS) that conus_zoom clips the view to.
+conus_bbox <- spData::us_states %>% st_transform(map_crs) %>% st_bbox()
+conus_ext  <- terra::ext(conus_bbox[["xmin"]], conus_bbox[["xmax"]], conus_bbox[["ymin"]], conus_bbox[["ymax"]])
 
 # Load route trend tables -----------------------------------------------------
 sdm_files <- list.files(sdm_dir, pattern = "_route_trends_sdm\\.csv$", full.names = TRUE)
@@ -112,6 +131,17 @@ trends <- map_dfr(sdm_files, function(f) {
   d
 }) %>%
   filter(model %in% models, !is.na(trend), !is.na(trend_lci), !is.na(trend_uci))
+
+# A handful of rows across the pipeline carry no route/lat/lon (an upstream
+# join gap -- e.g. a route dropped from route_keys but not from the trend
+# table); such a row can't be placed on a map and crashes st_as_sf() below,
+# so it's dropped here with a warning rather than failing the whole run.
+missing_coords <- is.na(trends$latitude) | is.na(trends$longitude)
+if (any(missing_coords)) {
+  message("WARNING: dropped ", sum(missing_coords), " row(s) with missing latitude/longitude ",
+          "(species: ", paste(sort(unique(trends$slug[missing_coords])), collapse = ", "), ").")
+  trends <- trends %>% filter(!missing_coords)
+}
 
 if (require_route_converged) {
   n_before <- nrow(trends)
@@ -135,37 +165,73 @@ cat("Species to map:", length(species_slugs), "| models:", paste(models, collaps
 
 # Helpers --------------------------------------------------------------------
 
-# Range-shift raster for one species/scenario, cropped to `route_bbox` united
-# with the range's own extent, downsampled, as dissolved polygons (sf).
-# Returns list(shapes, xlim, ylim) or NULL if the raster is missing.
-prepare_range <- function(tif, route_bbox) {
+# Range-shift raster for one species/scenario as dissolved polygons (sf),
+# cropped to the plotted extent. `route_bbox` = bbox of the routes to frame
+# (those inside the lower 48 when conus_zoom, else all of them), or NULL if
+# there are none; `all_route_bbox` = bbox of every route, used by the
+# fallback extent. Returns list(shapes, xlim, ylim), or NULL if the raster is
+# missing.
+prepare_range <- function(tif, route_bbox, all_route_bbox) {
   if (!file.exists(tif)) return(NULL)
 
   r <- rast(tif)
+
+  # A handful of rasters (confirmed: some rcp45_waterbirds and
+  # rcp45_western_forests files) encode the 0-7 classes as 0/10000/.../70000
+  # instead -- an upstream data bug, not a different legend. shift_rcl only
+  # matches 1-7, so left as-is these rasters classify to all-NA and silently
+  # draw no range at all. Detected via the actual max value (minmax()'s
+  # cached header stats can be missing -- global() forces a real scan when
+  # that happens) and corrected by rescaling back to the 0-7 legend.
+  rmax <- terra::minmax(r)[2, 1]
+  if (is.na(rmax)) rmax <- terra::global(r, "max", na.rm = TRUE)[1, 1]
+  if (!is.na(rmax) && rmax > 7) {
+    message("NOTE: ", basename(tif), " -- raster values scaled x10000 (max = ", rmax,
+            "); rescaling back to the 0-7 legend.")
+    r <- round(r / 10000)
+  }
+
   if (!terra::same.crs(r, map_crs)) r <- terra::project(r, map_crs, method = "near")
 
-  cls <- terra::classify(r, shift_rcl, others = NA)
+  # Coarse (10 km) range cells, just to find where the range is.
+  range_cells <- function(x) {
+    cls <- terra::classify(x, shift_rcl, others = NA)
+    coarse <- terra::aggregate(cls, fact = 10, fun = "modal", na.rm = TRUE)
+    terra::as.data.frame(coarse, xy = TRUE, na.rm = TRUE)
+  }
 
-  # Coarse pass just to find where the range is, so the full-resolution crop
-  # below is small.
-  coarse <- terra::aggregate(cls, fact = 10, fun = "modal", na.rm = TRUE)
-  # Extent uses quantiles of the range cells' coordinates (extent_trim), not
-  # the strict min/max, so isolated patches far from the main range (e.g.
-  # stray cells in Alaska) can't stretch the map into empty space.
-  cc <- terra::as.data.frame(coarse, xy = TRUE, na.rm = TRUE)
+  use_conus <- conus_zoom
+  if (use_conus) {
+    cc <- range_cells(terra::crop(r, conus_ext))
+    if (is.null(route_bbox) && nrow(cc) == 0) use_conus <- FALSE
+  }
+  if (!use_conus) {
+    cc <- range_cells(r)
+    route_bbox <- all_route_bbox
+  }
+
+  # Fallback extent uses quantiles of the range cells' coordinates
+  # (extent_trim), not the strict min/max, so isolated patches far from the
+  # main range (e.g. stray cells in Alaska) can't stretch the map into empty
+  # space. Inside the lower 48 the range is already bounded, so the strict
+  # min/max is used there.
+  trim <- if (use_conus) 0 else extent_trim
 
   xmin <- route_bbox[["xmin"]]; xmax <- route_bbox[["xmax"]]
   ymin <- route_bbox[["ymin"]]; ymax <- route_bbox[["ymax"]]
   if (nrow(cc) > 0) {
-    qx <- quantile(cc$x, c(extent_trim, 1 - extent_trim), names = FALSE)
-    qy <- quantile(cc$y, c(extent_trim, 1 - extent_trim), names = FALSE)
-    xmin <- min(xmin, qx[1]); xmax <- max(xmax, qx[2])
-    ymin <- min(ymin, qy[1]); ymax <- max(ymax, qy[2])
+    qx <- quantile(cc$x, c(trim, 1 - trim), names = FALSE)
+    qy <- quantile(cc$y, c(trim, 1 - trim), names = FALSE)
+    xmin <- min(c(xmin, qx[1])); xmax <- max(c(xmax, qx[2]))
+    ymin <- min(c(ymin, qy[1])); ymax <- max(c(ymax, qy[2]))
   }
   padx <- (xmax - xmin) * 0.04; pady <- (ymax - ymin) * 0.04
   plot_ext <- terra::ext(xmin - padx, xmax + padx, ymin - pady, ymax + pady)
 
-  cropped <- terra::crop(cls, plot_ext)
+  # Crop the drawn range from the FULL raster (not the lower-48-cropped one
+  # used only to find the extent), so the range runs to the panel edge
+  # instead of ending in a straight cut at the lower-48 bounding box.
+  cropped <- terra::classify(terra::crop(r, plot_ext), shift_rcl, others = NA)
   fact <- max(1, floor(ncol(cropped) / target_cols))
   if (fact > 1) cropped <- terra::aggregate(cropped, fact = fact, fun = "modal", na.rm = TRUE)
 
@@ -180,7 +246,12 @@ prepare_range <- function(tif, route_bbox) {
 }
 
 plot_species_map <- function(range, routes_sf, species, model, scenario_label) {
-  n_class <- table(routes_sf$trend_class)
+  # Only routes inside the plotted window are counted in the caption.
+  xy <- sf::st_coordinates(routes_sf)
+  in_view <- xy[, 1] >= range$xlim[1] & xy[, 1] <= range$xlim[2] &
+             xy[, 2] >= range$ylim[1] & xy[, 2] <= range$ylim[2]
+  n_class <- table(routes_sf$trend_class[in_view])
+  n_outside <- sum(!in_view)
 
   # Invisible points, one per trend class, so the legend always lists all
   # three classes even when a species has no routes in one of them (the
@@ -192,6 +263,7 @@ plot_species_map <- function(range, routes_sf, species, model, scenario_label) {
     geom_sf(data = world_map,  fill = NA, color = "grey90", linewidth = 0.3) +
     geom_sf(data = range$shapes, aes(fill = shift), color = NA) +
     geom_sf(data = states_map, fill = NA, color = "#BFBFBF", linewidth = 0.25) +
+    geom_sf(data = us_outline, fill = NA, color = "grey35", linewidth = 0.8) +
     geom_point(data = legend_dummy, aes(x = x, y = y, color = trend_class), alpha = 0) +
     geom_sf(data = routes_sf, aes(color = trend_class, size = pmin(abs(trend), size_limit)), alpha = 0.7) +
     scale_fill_manual(name = "Range Shift", values = shift_cols, drop = FALSE) +
@@ -203,9 +275,10 @@ plot_species_map <- function(range, routes_sf, species, model, scenario_label) {
     labs(title = species,
          subtitle = paste0(scenario_label, " range shift (2025); BBS route trends ", firstYear, "-", lastYear,
                            " | model: ", model),
-         caption = paste0(nrow(routes_sf), " routes (", n_class[["Decrease"]], " decreasing, ",
+         caption = paste0(sum(in_view), " routes (", n_class[["Decrease"]], " decreasing, ",
                           n_class[["Increase"]], " increasing, ", n_class[["Not significant"]],
-                          " not significant; 90% CI)")) +
+                          " not significant; 90% CI)",
+                          if (n_outside > 0) paste0("; ", n_outside, " more outside the map") else "")) +
     theme_light(base_size = 13) +
     theme(
       plot.title       = element_text(face = "bold", size = 17),
@@ -252,14 +325,20 @@ for (sp in species_slugs) {
 
   all_routes_sf <- st_as_sf(sp_all, coords = c("longitude", "latitude"), crs = 4326) %>%
     st_transform(map_crs)
-  route_bbox <- st_bbox(all_routes_sf)
+  all_route_bbox <- st_bbox(all_routes_sf)
+  xy_all <- st_coordinates(all_routes_sf)
+  in_conus <- xy_all[, 1] >= conus_bbox[["xmin"]] & xy_all[, 1] <= conus_bbox[["xmax"]] &
+              xy_all[, 2] >= conus_bbox[["ymin"]] & xy_all[, 2] <= conus_bbox[["ymax"]]
+  route_bbox <- if (conus_zoom) {
+    if (any(in_conus)) st_bbox(all_routes_sf[in_conus, ]) else NULL
+  } else all_route_bbox
 
   for (sc in unique(todo$scenario)) {
     suffix <- sub("^rcp", "", sc)
     tif <- here::here("data", paste0(sc, "_", group), code,
                       paste0(group, "_", code, "_breeding_2025_", suffix, "_ENSEMBLE_classifiedchange.tif"))
 
-    range <- tryCatch(prepare_range(tif, route_bbox), error = function(e) {
+    range <- tryCatch(prepare_range(tif, route_bbox, all_route_bbox), error = function(e) {
       message("WARNING: ", sp, " ", sc, " -- raster prep failed: ", conditionMessage(e)); NULL
     })
     if (is.null(range)) {
