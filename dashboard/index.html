@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BBS Route-level Trends Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>BBS Route-level Trends &times; Climate SDM Dashboard</h1>
+  <div class="subtitle">469 species &middot; base / anthro models &middot; RCP 4.5 / 8.5 scenarios, 2010&ndash;2025</div>
+
+  <div class="controls">
+    <div class="control">
+      <label for="group-select">Bird group</label>
+      <select id="group-select"></select>
+    </div>
+
+    <div class="control grow">
+      <label for="species-filter">Species</label>
+      <input type="text" id="species-filter" placeholder="Filter by name or code&hellip;" autocomplete="off">
+      <select id="species-select" size="1"></select>
+    </div>
+
+    <div class="control">
+      <label>Model</label>
+      <div class="model-toggle" id="model-toggle">
+        <button type="button" data-model="base" class="active">Base</button>
+        <button type="button" data-model="anthro">Anthro</button>
+      </div>
+    </div>
+
+    <div class="control">
+      <label for="scenario-select">Climate scenario</label>
+      <select id="scenario-select"></select>
+    </div>
+  </div>
+</header>
+
+<main>
+  <h2 class="species-heading" id="species-heading"></h2>
+
+  <div class="panel-grid">
+    <div class="panel">
+      <h2>Trend by SDM category (RCP 4.5 + 8.5)</h2>
+      <div class="img-wrap" id="rcp-violin-wrap">
+        <img id="rcp-violin-img" alt="Violin plot of trend by 8-category SDM classified change">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Trend by range-change group (RCP 4.5 + 8.5)</h2>
+      <div class="img-wrap" id="group-violin-wrap">
+        <img id="group-violin-img" alt="Violin plot of trend by Contraction/Stable/Expansion">
+      </div>
+    </div>
+
+    <div class="panel map-panel">
+      <h2>Range shift + route trends</h2>
+      <div class="img-wrap" id="map-wrap">
+        <img id="map-img" alt="Map of range shift and BBS route trends">
+      </div>
+    </div>
+  </div>
+
+  <table class="stats">
+    <caption>Contraction / Stable / Expansion &mdash; route trend statistics</caption>
+    <thead>
+      <tr class="model-row">
+        <th></th>
+        <th colspan="3">Base</th>
+        <th colspan="3">Anthro</th>
+      </tr>
+      <tr>
+        <th>Category</th>
+        <th>n</th><th>Mean</th><th>SD</th>
+        <th>n</th><th>Mean</th><th>SD</th>
+      </tr>
+    </thead>
+    <tbody id="stats-tbody"></tbody>
+  </table>
+  <p class="table-note" id="table-note"></p>
+</main>
+
+<footer>
+  Built by 7_build_dashboard.R from output/species_routes_covariates/, output/species_maps/, and output/files/*.xlsx. Local-only &mdash; open this file directly in a browser.
+</footer>
+
+<script src="data/manifest.js"></script>
+<script src="data/tables.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

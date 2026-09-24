@@ -56,6 +56,22 @@
 #   5 = slightly improving (25 to 50% change)
 #   6 = improving (50 to Inf % change)
 #   7 = colonization
+#
+# Known data bug (confirmed via tests/check_sdm.R, fixed one-time in already
+# -written output by tests/fix_rcp45_scaling.R): the RCP4.5 (rcp45) raster
+# for exactly 5 species stores its 0-7 category codes scaled x10000 (e.g.
+# 40000 instead of 4; 0 stays 0). Confirmed via tests/check_sdm.R to be in
+# the raw .tif files themselves (same pattern across the WHOLE raster, not
+# just at route locations) -- not introduced by this script's extraction
+# code, which does no rescaling of its own. RCP8.5 (rcp85) for these same
+# species, and rcp45 for every other species, are unaffected.
+# 3d_visualization_map.R already corrects for this the same way (detects
+# any raster max > 7 and divides by 10000) when building the range-shift
+# maps. Hardcoded here to just these 5 known-affected species (rather than
+# a blanket "divide if max > 7" rule) so a genuinely different future data
+# problem isn't silently misread as this same bug -- if a new species shows
+# this pattern, confirm with tests/check_sdm.R and add it to this list.
+rcp45_scale_bug_species <- c("ACWO", "AMDI", "BHGR", "WILL", "WODU")
 
 library(here)
 library(tidyverse)
@@ -155,6 +171,11 @@ for (f in species_files) {
     routes_sv_proj <- project(routes_sv, crs(rcp45_rast))
     vals_45 <- extract(rcp45_rast, routes_sv_proj)
     sp_routes$rcp45 <- vals_45[, 2]
+    if (abbr %in% rcp45_scale_bug_species) {
+      sp_routes$rcp45 <- round(sp_routes$rcp45 / 10000)
+      cat("  NOTE:", abbr, "-- rcp45 corrected for known x10000 raster scaling bug",
+          "(see tests/check_sdm.R)\n")
+    }
   }
 
   # Extract rcp85 values
