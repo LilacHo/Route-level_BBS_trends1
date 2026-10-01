@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final SDM Trend Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+:root {
+  --bg: #f5f7f5;
+  --paper: #ffffff;
+  --ink: #16201b;
+  --ink-2: #4c5852;
+  --muted: #76827b;
+  --rule: #dce2de;
+  --grid: #e7ebe8;
+  --tint: #eaf0ec;
+  --accent: #1d5a45;
+  --con: #d9423f;
+  --exp: #2a78d6;
+  --stable: #9aa39e;
+  --line: rgba(22, 32, 27, 0.16);
+  --line-hi: #16201b;
+  --code-bg: #eef2ef;
+  --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111613;
+    --paper: #18201c;
+    --ink: #e8eee9;
+    --ink-2: #b3beb7;
+    --muted: #8a968f;
+    --rule: #2b3530;
+    --grid: #232c27;
+    --tint: #1c2721;
+    --accent: #7fc4a6;
+    --con: #e66767;
+    --exp: #4b93ea;
+    --stable: #7d8781;
+    --line: rgba(232, 238, 233, 0.17);
+    --line-hi: #ffffff;
+    --code-bg: #1d2722;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111613;
+  --paper: #18201c;
+  --ink: #e8eee9;
+  --ink-2: #b3beb7;
+  --muted: #8a968f;
+  --rule: #2b3530;
+  --grid: #232c27;
+  --tint: #1c2721;
+  --accent: #7fc4a6;
+  --con: #e66767;
+  --exp: #4b93ea;
+  --stable: #7d8781;
+  --line: rgba(232, 238, 233, 0.17);
+  --line-hi: #ffffff;
+  --code-bg: #1d2722;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.62;
+  padding-inline: 20px;
+  padding-block: 0 72px;
+}
+.wrap { max-width: 860px; margin: 0 auto; }
+.prose { max-width: 680px; }
+
+header { padding-block: 56px 28px; border-bottom: 1px solid var(--rule); margin-bottom: 36px; }
+.eyebrow {
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+  margin: 0 0 14px;
+}
+h1 {
+  font-family: var(--sans); font-weight: 600; font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 16px; text-wrap: balance;
+}
+.dek { font-size: 20px; color: var(--ink-2); margin: 0; max-width: 640px; }
+.meta { font-family: var(--sans); font-size: 13px; color: var(--muted); margin-top: 18px; }
+
+h2 {
+  font-family: var(--sans); font-weight: 600; font-size: 24px; line-height: 1.25;
+  margin: 56px 0 12px; text-wrap: balance; letter-spacing: -0.005em;
+}
+h2 .num { color: var(--muted); font-weight: 500; margin-right: 10px; font-variant-numeric: tabular-nums; }
+h3 { font-family: var(--sans); font-weight: 600; font-size: 18px; margin: 32px 0 8px; }
+p { margin: 0 0 16px; }
+strong { font-weight: 600; }
+a { color: var(--accent); }
+
+.answer {
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 6px;
+  padding: 24px 26px; margin: 0 0 8px;
+}
+.answer .label {
+  font-family: var(--sans); font-size: 12px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+}
+.answer p:last-child { margin-bottom: 0; }
+.answer .big { font-size: 22px; line-height: 1.45; }
+
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 22px 0 6px; }
+.fig-num { border-top: 2px solid var(--ink); padding-top: 10px; }
+.fig-num .v { font-family: var(--sans); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.fig-num .k { font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); line-height: 1.4; margin-top: 4px; }
+
+ol.steps { padding-left: 0; list-style: none; counter-reset: s; margin: 16px 0 20px; }
+ol.steps > li { counter-increment: s; position: relative; padding-left: 40px; margin-bottom: 14px; }
+ol.steps > li::before {
+  content: counter(s); position: absolute; left: 0; top: 2px; width: 26px; height: 26px;
+  border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent);
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  display: grid; place-items: center;
+}
+ul { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+
+code, .mono { font-family: var(--mono); font-size: 0.84em; }
+p code, li code, td code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+pre {
+  font-family: var(--mono); font-size: 14px; line-height: 1.6; background: var(--code-bg);
+  border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 12px 0 20px; color: var(--ink);
+}
+pre .c { color: var(--muted); }
+
+.eq {
+  font-family: var(--mono); font-size: 15px; background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 18px 20px; overflow-x: auto; margin: 14px 0 18px; line-height: 1.9;
+  white-space: pre;
+}
+.eq .f { color: var(--accent); font-weight: 500; }
+.eq .r { color: var(--exp); font-weight: 500; }
+
+.tbl-wrap { overflow-x: auto; margin: 14px 0 20px; }
+table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: 15px; }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.hl td { background: var(--tint); }
+tr.hl td:first-child { padding-left: 8px; }
+
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.dot.con { background: var(--con); } .dot.st { background: var(--stable); } .dot.exp { background: var(--exp); }
+
+figure { margin: 28px 0 32px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 20px 16px; }
+figure .ft { font-family: var(--sans); font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+figure .fs { font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); margin: 0 0 12px; line-height: 1.45; }
+figcaption { font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); line-height: 1.5; margin-top: 10px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--sans); fill: var(--ink-2); }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.panel-t { font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--ink); margin: 0 0 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--sans); font-size: 13px; color: var(--ink-2); margin: 0 0 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw-line { width: 22px; height: 0; border-top: 1.5px solid var(--line); display: inline-block; }
+.sw-line.bold { border-top: 3px solid var(--line-hi); }
+
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--paper); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-family: var(--sans);
+  font-size: 13px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,0.12); max-width: 260px;
+  font-variant-numeric: tabular-nums;
+}
+.tip b { font-weight: 600; }
+
+.callout { border-left: 3px solid var(--accent); padding: 2px 0 2px 16px; margin: 18px 0 20px; color: var(--ink-2); }
+.callout p:last-child { margin-bottom: 0; }
+
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 16px 0 22px; }
+.compare > div { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 16px; }
+.compare h4 { font-family: var(--sans); font-size: 15px; margin: 0 0 6px; }
+.compare .row { display: flex; justify-content: space-between; gap: 10px; font-family: var(--sans); font-size: 14px; font-variant-numeric: tabular-nums; border-top: 1px solid var(--rule); padding: 6px 0; }
+.compare .row span:first-child { color: var(--ink-2); }
+
+dl.gloss { margin: 12px 0 0; }
+dl.gloss dt { font-family: var(--sans); font-weight: 600; font-size: 16px; margin-top: 16px; }
+dl.gloss dd { margin: 3px 0 0; }
+
+@media (max-width: 520px) {
+  body { font-size: 17px; padding-inline: 16px; }
+  .answer { padding: 18px; }
+  figure { padding: 16px 14px 12px; }
+}
+
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; margin: 0 0 14px; }
+.topbar .eyebrow { margin: 0; }
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 13px; font-weight: 500;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 999px;
+  padding: 6px 12px 6px 10px; cursor: pointer;
+}
+.theme-toggle:hover { border-color: var(--ink-2); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-toggle .ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.eq .lbl { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <div class="topbar">
+    <p class="eyebrow">BBS route-level trends, 2010–2025 · anthro model · RCP 4.5</p>
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path id="theme-ico" d=""/></svg>
+      <span id="theme-label">Dark mode</span>
+    </button>
+  </div>
+  <h1>Do SDM categories predict observed population trends?</h1>
+  <p class="dek">A mixed model with heavy-tailed (Student-t) errors, fitted to 213,127 route trends from 468 species, explained step by step for readers who haven't used mixed models.</p>
+  <p class="meta">Models fitted with <span class="mono">glmmTMB</span> in R 4.6 · Code: <span class="mono">4f_sdm_category_mixed_models.R</span> (main analysis), <span class="mono">4g_sdm_category_robustness.R</span> (sensitivity checks) · Report prepared 30 September 2026</p>
+</header>
+
+<section class="prose">
+  <div class="answer">
+    <div class="label">Short answer</div>
+    <p class="big">Yes, in the predicted direction, but the effect is small and differs a lot between species.</p>
+    <p>For the average species, routes in areas the SDM classifies as <strong>Contraction</strong> trend <strong>0.76 %/yr worse</strong> than that species' routes in <strong>Expansion</strong> areas: Contraction − Expansion = −0.76 %/yr (95% CI −1.03 to −0.49, p &lt; 0.001). The category explains under 1% of the variation in trends within a species, and roughly a third of species show the opposite pattern. By bird group, the effect is strongest in eastern forests, boreal forests and grasslands, and absent in water-associated groups.</p>
+  </div>
+  <div class="figs">
+    <div class="fig-num"><div class="v">−0.76</div><div class="k">%/yr, Contraction minus Expansion, average species</div></div>
+    <div class="fig-num"><div class="v">~37%</div><div class="k">of species expected to show the reverse pattern</div></div>
+    <div class="fig-num"><div class="v">0.6%</div><div class="k">of within-species trend variation explained by the category</div></div>
+  </div>
+</section>
+
+<section class="prose">
+  <h2><span class="num">1</span>The question</h2>
+  <p>For each species, a species distribution model (SDM) projects how climate suitability changes by 2025 and classifies every location into one of seven categories. We group these into three:</p>
+  <ul>
+    <li><span class="dot con"></span><strong>Contraction</strong>: extirpation, worsening, or slightly worsening (codes 1–3)</li>
+    <li><span class="dot st"></span><strong>Stable</strong>: neutral (code 4)</li>
+    <li><span class="dot exp"></span><strong>Expansion</strong>: slightly improving, improving, or colonization (codes 5–7)</li>
+  </ul>
+  <p>If the SDM captures something real, a species should be declining faster on routes in its Contraction areas and doing better on routes in its Expansion areas. The question is whether the observed BBS trends, 2010–2025, show that pattern. Throughout, the key number is <strong>Contraction − Expansion</strong>, which the hypothesis predicts to be <strong>negative</strong>.</p>
+</section>
+
+<section class="prose">
+  <h2><span class="num">2</span>The data</h2>
+  <p>Each row is one BBS route for one species.</p>
+  <ul>
+    <li><strong>Response:</strong> the route's estimated population trend in % per year. It comes from the route-level spatial (iCAR) model that includes the anthropogenic land-use covariate: <code>trend = 100 × (exp(β<sub>route</sub>) − 1)</code>, using the posterior mean of the route's slope.</li>
+    <li><strong>Predictor:</strong> the SDM category (RCP 4.5) at the route's location, grouped into the three levels above.</li>
+    <li><strong>Grouping variable:</strong> the species.</li>
+  </ul>
+  <p>We started with 259,490 route × species rows from 469 species files. All passed the per-route convergence check (<code>route_converged</code>). We then dropped 46,363 rows in category 0 ("never suitable") or with no SDM value, because the hypothesis makes no prediction there. That leaves <strong>213,127 routes from 468 species</strong>. 439 of these species have routes in at least two categories, and only those species can tell us how trends differ between categories <em>within</em> a species.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Category</th><th class="n">Routes</th><th class="n">Mean trend</th><th class="n">Median trend</th></tr></thead>
+      <tbody>
+        <tr><td><span class="dot con"></span>Contraction</td><td class="n">29,464</td><td class="n">−1.29</td><td class="n">−1.25</td></tr>
+        <tr><td><span class="dot st"></span>Stable</td><td class="n">165,621</td><td class="n">−0.59</td><td class="n">−0.70</td></tr>
+        <tr><td><span class="dot exp"></span>Expansion</td><td class="n">18,042</td><td class="n">+0.74</td><td class="n">+0.28</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>On its face this already looks like a strong confirmation: a gap of about 2 %/yr between Contraction and Expansion routes. The next section explains why we can't take it at face value.</p>
+</section>
+
+<section class="prose">
+  <h2><span class="num">3</span>Why a simple comparison misleads</h2>
+  <p>Comparing the three averages above, or running a Kruskal–Wallis test on all routes, treats the 213,127 routes as 213,127 independent observations of one shared relationship. Two things break that assumption.</p>
+  <h3>Problem 1: species differ, and categories are not spread evenly across species</h3>
+  <p>Some species are increasing almost everywhere; others are declining almost everywhere. If species that happen to be doing well also happen to have many Expansion routes, the Expansion average will be high even if no single species does better in its Expansion areas. This is a composition effect, the bird version of Simpson's paradox. It says nothing about the hypothesis, which is about differences <em>within</em> a species.</p>
+  <h3>Problem 2: routes of the same species are not independent</h3>
+  <p>Two routes of the same species share that species' biology, its range-wide drivers, and the same fitted model. They are much more alike than two routes of different species. Treating them as independent makes the sample look far larger than it really is, so standard errors come out too small and p-values too optimistic. A species with 2,000 routes also outweighs one with 20 routes by 100 to 1.</p>
+  <h3>Problem 3: a few routes have extreme trends</h3>
+  <p>Most route trends fall within ±12 %/yr, but a few hundred lie beyond ±20 %/yr. Methods that assume normally distributed scatter give these rare routes more pull on the averages than they deserve.</p>
+  <div class="callout"><p>What we actually want to know: <strong>for a typical species, how does its trend change as we move from its Contraction areas to its Expansion areas, and how consistent is that across species?</strong> A mixed model with heavy-tailed errors addresses all three problems.</p></div>
+</section>
+
+<section class="prose">
+  <h2><span class="num">4</span>The model, in plain terms</h2>
+  <p>Picture fitting a separate small regression for each species: trend explained by category, using only that species' routes. Each fit gives three numbers:</p>
+  <ul>
+    <li>the species' trend in its Stable areas (its <em>baseline</em>);</li>
+    <li>how much lower or higher its Contraction routes are than that baseline;</li>
+    <li>how much lower or higher its Expansion routes are than that baseline.</li>
+  </ul>
+  <p>Then average those numbers across species. The average of the last two answers our question, and their spread across species tells us how consistent the pattern is.</p>
+  <p>A <strong>mixed model</strong> does exactly this in one fit, with two improvements over literally fitting 468 regressions (Problems 1 and 2):</p>
+  <ul>
+    <li><strong>It weights species sensibly.</strong> A species with thousands of routes gets a precise estimate, but it still counts as one species when we average; it doesn't swamp the result.</li>
+    <li><strong>It borrows strength for data-poor species.</strong> A species with only 3 Contraction routes has a very noisy Contraction estimate. The model pulls that estimate part of the way toward the across-species average, more when a species has little data and hardly at all when it has lots. This is called <em>partial pooling</em> or <em>shrinkage</em>.</li>
+  </ul>
+  <p>For Problem 3, the leftover route-to-route scatter is modelled with a <strong>Student-t distribution</strong> instead of a normal one. A Student-t is bell-shaped like the normal but has heavier tails, set by its degrees of freedom (ν): the smaller ν, the heavier the tails. Under a Student-t, an extreme route is "expected occasionally", so it pulls the estimates much less. The model estimates ν from the data.</p>
+
+  <h3>The equation</h3>
+  <p>For route <i>i</i> belonging to species <i>s</i>:</p>
+<div class="eq">trend<sub>i</sub> = (<span class="f">β₀</span> + <span class="r">u₀ₛ</span>)
+         + (<span class="f">β<sub>C</sub></span> + <span class="r">u<sub>C,s</sub></span>) × Contraction<sub>i</sub>
+         + (<span class="f">β<sub>E</sub></span> + <span class="r">u<sub>E,s</sub></span>) × Expansion<sub>i</sub>
+         + ε<sub>i</sub>,        ε<sub>i</sub> ~ Student-t(ν, σ)</div>
+  <p>Contraction<sub><i>i</i></sub> and Expansion<sub><i>i</i></sub> are 0/1 indicators. A Stable route has both equal to 0, so Stable is the reference level that the other two are compared against.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Term</th><th>Kind</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>β₀</code></td><td>fixed effect</td><td>Trend in Stable areas for the <em>average species</em></td></tr>
+        <tr><td><code>β<sub>C</sub></code></td><td>fixed effect</td><td>Average species: Contraction routes minus Stable routes</td></tr>
+        <tr><td><code>β<sub>E</sub></code></td><td>fixed effect</td><td>Average species: Expansion routes minus Stable routes</td></tr>
+        <tr><td><code>u₀ₛ</code></td><td>random effect</td><td>How far species <i>s</i>'s baseline sits from the average ("random intercept")</td></tr>
+        <tr><td><code>u<sub>C,s</sub></code>, <code>u<sub>E,s</sub></code></td><td>random effects</td><td>How far species <i>s</i>'s own Contraction and Expansion effects sit from the average ("random slopes")</td></tr>
+        <tr><td><code>ε<sub>i</sub></code></td><td>residual</td><td>Route-to-route scatter left over within a species</td></tr>
+        <tr><td><code>ν</code>, <code>σ</code></td><td>residual parameters</td><td>Tail heaviness (degrees of freedom) and scale of that scatter</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>Fixed effects</strong> are the population-average numbers we report and test. <strong>Random effects</strong> are the species-specific deviations. We don't estimate each one as a free parameter. Instead, the model assumes they come from a normal distribution centred on zero, estimates the <em>spread</em> of that distribution (a standard deviation for each), and lets the three deviations for a species be correlated. That assumption is what produces the partial pooling described above. Only the route-level residual is Student-t; the species-level deviations are still assumed normal.</p>
+  <p>Because the error distribution is not normal, this is a <strong>generalized linear mixed model (GLMM)</strong>. The link is the identity, so every coefficient is still in %/yr. And because the Student-t is symmetric, the fixed effects still describe the average species' average trend, just estimated in a way that isn't dominated by a few extreme routes.</p>
+
+  <h3>Reading the R formula</h3>
+  <p>The model is fitted with:</p>
+<pre>glmmTMB(trend ~ cat3 + (1 + cat3 | species_code),
+        data = routes, family = t_family())</pre>
+  <p>Each part of the formula is a part of the equation:</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>In the R call</th><th>In the equation</th><th>Name in the output</th></tr></thead>
+      <tbody>
+        <tr><td><code>trend</code></td><td>trend<sub>i</sub></td><td>—</td></tr>
+        <tr><td>implicit intercept (R always adds <code>1</code>)</td><td>β₀</td><td><code>(Intercept)</code></td></tr>
+        <tr><td><code>cat3</code> (fixed part)</td><td>β<sub>C</sub> × Contraction<sub>i</sub> + β<sub>E</sub> × Expansion<sub>i</sub></td><td><code>cat3Contraction</code>, <code>cat3Expansion</code></td></tr>
+        <tr><td><code>1</code> inside <code>( … | species_code)</code></td><td>u₀ₛ</td><td>species_code <code>(Intercept)</code> SD</td></tr>
+        <tr><td><code>cat3</code> inside <code>( … | species_code)</code></td><td>u<sub>C,s</sub> × Contraction<sub>i</sub> + u<sub>E,s</sub> × Expansion<sub>i</sub></td><td>species_code <code>cat3Contraction</code>, <code>cat3Expansion</code> SDs</td></tr>
+        <tr><td><code>family = t_family()</code></td><td>ε<sub>i</sub> ~ Student-t(ν, σ)</td><td>dispersion (σ²) and df (ν)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>How <code>cat3</code> becomes two 0/1 columns.</strong> <code>cat3</code> is a factor with levels Stable, Contraction, Expansion, and Stable is listed first. R turns a three-level factor into an intercept plus two indicator columns; the first level is represented by "both are 0":</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Route's category</th><th class="n">Intercept</th><th class="n">Contraction<sub>i</sub></th><th class="n">Expansion<sub>i</sub></th><th>Model's prediction</th></tr></thead>
+      <tbody>
+        <tr><td><span class="dot st"></span>Stable</td><td class="n">1</td><td class="n">0</td><td class="n">0</td><td>β₀</td></tr>
+        <tr><td><span class="dot con"></span>Contraction</td><td class="n">1</td><td class="n">1</td><td class="n">0</td><td>β₀ + β<sub>C</sub></td></tr>
+        <tr><td><span class="dot exp"></span>Expansion</td><td class="n">1</td><td class="n">0</td><td class="n">1</td><td>β₀ + β<sub>E</sub></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>What <code>(1 + cat3 | species_code)</code> adds.</strong> Read the bar as "the terms on the left, separately for each species on the right". The left side repeats the same three columns as the fixed part, so each fixed coefficient gets a species-specific partner: β₀ gets u₀ₛ, β<sub>C</sub> gets u<sub>C,s</sub>, β<sub>E</sub> gets u<sub>E,s</sub>. That pairing is why the equation groups them in brackets. The model estimates the three SDs and three correlations of these deviations; the individual deviations come out afterwards with <code>ranef()</code>, and each species' own coefficients (fixed + random) with <code>coef()</code>.</p>
+  <p><strong>The residual</strong> is never written in the formula. <code>family = t_family()</code> tells <code>glmmTMB</code> to use a Student-t for it; the default would be normal.</p>
+</section>
+
+<section class="prose">
+  <h2><span class="num">5</span>How the model was fitted</h2>
+  <ol class="steps">
+    <li><strong>Build the data.</strong> Read every <code>*_anthro_route_trends_sdm.csv</code>, keep converged routes, drop category 0 and missing values, and recode <code>rcp45</code> into the three-level factor <code>cat3</code> with <strong>Stable as the reference level</strong>.</li>
+    <li><strong>Fit the model</strong> with the <code>glmmTMB</code> call above. <code>glmmTMB</code> estimates everything, including ν and σ, by maximum likelihood.</li>
+    <li><strong>Check the fit is usable.</strong> The optimiser converged and the Hessian (the curvature of the likelihood at the optimum) is positive definite. That means every parameter, including the variances, is identified and its standard error can be trusted.</li>
+    <li><strong>Check the error distribution</strong> (section 6): do the residuals actually follow the fitted Student-t?</li>
+    <li><strong>Form the key contrast.</strong> The model reports each category against Stable. Contraction minus Expansion is <code>β<sub>C</sub> − β<sub>E</sub></code>; the hypothesis predicts it is negative. Its standard error comes from the estimated covariance of the two coefficients, written as <code>√(L V Lᵀ)</code> with <code>L = (0, 1, −1)</code>, because the two estimates are not independent.</li>
+    <li><strong>Get p-values.</strong> <code>glmmTMB</code> reports Wald z-tests (estimate ÷ SE, compared with a standard normal). The population-level effects are estimated from about 440 species, so this approximation is safe.</li>
+    <li><strong>Extract species-level estimates.</strong> <code>coef(fit)$cond$species_code</code> returns each species' own intercept and effects (fixed effect plus that species' random effect). These give Figure 2.</li>
+  </ol>
+</section>
+
+<section class="prose">
+  <h2><span class="num">6</span>Checking the error distribution</h2>
+  <p>If the fitted Student-t is the right description of the route-to-route scatter, the share of routes beyond its 1% and 0.1% cutoffs should be close to 1% and 0.1%.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Share of routes beyond the fitted Student-t's cutoff</th><th class="n">Expected</th><th class="n">Observed</th></tr></thead>
+      <tbody>
+        <tr><td>1% cutoff (two-sided)</td><td class="n">1%</td><td class="n">0.88%</td></tr>
+        <tr><td>0.1% cutoff (two-sided)</td><td class="n">0.1%</td><td class="n">0.05%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The observed shares are close to the expected 1% and 0.1%, and if anything slightly below at the extreme end, so the Student-t captures the tails well. The estimated ν = 3.4 means very heavy tails: extreme routes are far more common than a normal distribution would allow, which is why the model uses Student-t errors.</p>
+</section>
+
+<section class="prose">
+  <h2><span class="num">7</span>Results</h2>
+  <h3>Population-average effects (fixed effects)</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Term</th><th class="n">Estimate (%/yr)</th><th class="n">SE</th><th class="n">95% CI</th><th class="n">z</th><th class="n">p</th></tr></thead>
+      <tbody>
+        <tr><td>Stable-area trend, average species (β₀)</td><td class="n">−0.97</td><td class="n">0.15</td><td class="n">−1.26 to −0.69</td><td class="n">−6.7</td><td class="n">&lt;0.001</td></tr>
+        <tr><td><span class="dot con"></span>Contraction − Stable (β<sub>C</sub>)</td><td class="n">−0.21</td><td class="n">0.09</td><td class="n">−0.39 to −0.02</td><td class="n">−2.2</td><td class="n">0.027</td></tr>
+        <tr><td><span class="dot exp"></span>Expansion − Stable (β<sub>E</sub>)</td><td class="n">+0.55</td><td class="n">0.11</td><td class="n">+0.34 to +0.77</td><td class="n">5.0</td><td class="n">&lt;0.001</td></tr>
+        <tr class="hl"><td><strong>Contraction − Expansion</strong></td><td class="n"><strong>−0.76</strong></td><td class="n">0.14</td><td class="n">−1.03 to −0.49</td><td class="n">−5.5</td><td class="n">&lt;0.001</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Putting the pieces together, the <strong>average species</strong> trends at −1.18 %/yr in its Contraction areas, −0.97 %/yr in its Stable areas, and −0.42 %/yr in its Expansion areas. The ordering matches the hypothesis, and most of the difference sits on the Expansion side: Expansion routes lift the trend by 0.55, while Contraction routes depress it by only 0.21, and that Contraction effect is only just significant (p = 0.027).</p>
+  <p>The average species is declining everywhere. Expansion areas mean a <em>slower decline</em>, not growth.</p>
+</section>
+
+<figure class="wrap" id="fig1">
+  <p class="ft">Figure 1. Average-species category effects</p>
+  <p class="fs">Estimate with 95% confidence interval, %/yr, from the Student-t mixed model. Hover or tap a row for details.</p>
+  <svg id="f1" viewBox="0 0 680 212" role="img" aria-label="Student-t: Contraction minus Stable −0.21, Expansion minus Stable +0.55, Contraction minus Expansion −0.76"></svg>
+  <figcaption>The dashed line marks no difference. Contraction − Expansion, the key contrast, equals the difference between the other two effects: −0.21 − 0.55 = −0.76.</figcaption>
+</figure>
+
+<section class="prose">
+  <h3>How much do species differ? (random effects)</h3>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Component</th><th class="n">SD (%/yr)</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td>Species baseline (u₀)</td><td class="n">3.05</td><td>Species' Stable-area trends differ widely</td></tr>
+        <tr><td>Contraction effect (u<sub>C</sub>)</td><td class="n">1.61</td><td>About 8× the average effect of −0.21</td></tr>
+        <tr><td>Expansion effect (u<sub>E</sub>)</td><td class="n">1.87</td><td>About 3× the average effect of +0.55</td></tr>
+        <tr><td>Contraction − Expansion, derived</td><td class="n">2.37</td><td>About 3× the size of the average gap of −0.76</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The residual scale is σ = 2.46 %/yr with ν = 3.4. Because the tails are heavy, σ is smaller than a standard deviation would be; it describes the width of the central bulk of route-to-route scatter.</p>
+  <p>The correlations among the three species-level effects are all weak (between −0.02 and +0.19). A species' overall trend tells you little about how strongly it follows the SDM.</p>
+  <p>If species' Contraction − Expansion effects are normally distributed with mean −0.76 and SD 2.37, about <strong>37% of species</strong> should have a true effect above zero, the reverse of the prediction. The species-level estimates agree (Figure 2): 241 of the 365 species with both Contraction and Expansion routes (66%) have a negative estimate, a little more than expected because shrinkage pulls data-poor species toward the negative average. A model-free check points the same way: among the 290 species with at least 3 routes in each of those two categories, 63% have a higher raw mean trend in Expansion.</p>
+</section>
+
+<figure class="wrap" id="fig3">
+  <p class="ft">Figure 2. Species-level Contraction − Expansion effects</p>
+  <p class="fs">Model estimate for each of the 365 species with at least one route in both Contraction and Expansion areas, in bins of 0.5 %/yr. Hover or tap a bar for its count.</p>
+  <div class="legend"><span><i class="dot exp"></i>Below zero: Contraction worse (as predicted)</span><span><i class="dot con"></i>Above zero: Contraction better (reverse)</span></div>
+  <svg id="f3" viewBox="0 0 680 270" role="img" aria-label="Histogram of species effects, centred below zero with a long left tail"></svg>
+  <figcaption>The distribution is centred clearly below zero, but a substantial minority of species fall above it, and a long left tail holds a few species with very strong effects.</figcaption>
+</figure>
+
+<section class="prose">
+  <h3>Partial pooling in practice</h3>
+  <p>Two species show what shrinkage does to the species-level estimates:</p>
+  <div class="compare">
+    <div>
+      <h4>Song Sparrow</h4>
+      <div class="row"><span>Routes (C / S / E)</span><span>566 / 1,296 / 77</span></div>
+      <div class="row"><span>Raw mean, Contraction</span><span>−1.14</span></div>
+      <div class="row"><span>Model, Contraction</span><span>−1.21</span></div>
+      <div class="row"><span>Raw mean, Expansion</span><span>+1.39</span></div>
+      <div class="row"><span>Model, Expansion</span><span>+1.13</span></div>
+    </div>
+    <div>
+      <h4>Greater Prairie-Chicken</h4>
+      <div class="row"><span>Routes (C / S / E)</span><span>4 / 48 / 5</span></div>
+      <div class="row"><span>Raw mean, Contraction</span><span>−12.50</span></div>
+      <div class="row"><span>Model, Contraction</span><span>−2.51</span></div>
+      <div class="row"><span>Raw mean, Expansion</span><span>−6.60</span></div>
+      <div class="row"><span>Model, Expansion</span><span>−0.92</span></div>
+    </div>
+  </div>
+  <p>With hundreds of routes, Song Sparrow's estimates stay close to its raw means. Greater Prairie-Chicken's Contraction mean rests on just 4 routes, so the model treats −12.5 as partly noise and pulls it strongly toward what is typical. Its estimates move a long way (Contraction −12.5 → −2.5) for two reasons: it has few routes (shrinkage), and some of them are extreme, which the Student-t errors down-weight. For species like this, the estimate describes a typical route rather than the raw average.</p>
+
+  <h3>How much does the category predict?</h3>
+  <p>A reliable average effect is not the same as a strong predictor. Remove each species' own mean trend and ask how much of the remaining route-to-route variation the SDM category explains: <strong>R² = 0.006</strong>, or 0.6%. For comparison, knowing only which species a route belongs to explains about 25% of the variation in trends. The within-species signal is real but small next to the other things that make one route's trend differ from another's. (These R² values are computed directly from the data, not from the model.)</p>
+</section>
+
+<section class="prose">
+  <h2><span class="num">8</span>Sensitivity checks</h2>
+  <p>Each check changes one aspect of the main model and asks whether the Contraction − Expansion pattern survives. The first two were fitted with Student-t errors and species random slopes, like the main model.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Check</th><th>What it changes</th><th class="n">Result</th></tr></thead>
+      <tbody>
+        <tr><td>Precision-weighted</td><td>Routes weighted by 1 / SE² of their trend (SE from the 90% credible interval, floored at 0.25); category as a score −1 / 0 / +1. Result in %/yr per step toward Expansion; two steps ≈ C − E of −0.76</td><td class="n">+0.38</td></tr>
+        <tr><td>7-level gradient</td><td>Raster codes 1–7 as a numeric predictor instead of three groups. Result in %/yr per code step</td><td class="n">+0.18</td></tr>
+        <tr><td>Model-free sign test</td><td>Species with ≥ 3 Contraction and ≥ 3 Expansion routes: is the raw Contraction mean lower?</td><td class="n">184 of 290 (63%)<br>p &lt; 0.001</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Every check points the same way, with similar size.</p>
+</section>
+
+<section class="prose">
+  <h2><span class="num">9</span>By bird group</h2>
+  <p>Each species belongs to one of 12 habitat groups (eastern forests, grasslands, marshlands, and so on). Arctic is left out: it has a single species with two routes, both Stable, so it offers no category contrast. That leaves 11 groups.</p>
+
+  <h3>The group model</h3>
+  <p>Species remain the random-effects unit, exactly as in the main model, and each group gets its own average category effects as fixed effects. Let <i>g</i>(<i>s</i>) be the habitat group of species <i>s</i>:</p>
+<div class="eq"><span class="lbl">fit_g</span>   trend<sub>i</sub> = (<span class="f">β<sub>0,g(s)</sub></span> + <span class="r">u₀ₛ</span>)
+                + (<span class="f">β<sub>C,g(s)</sub></span> + <span class="r">u<sub>C,s</sub></span>) × Contraction<sub>i</sub>
+                + (<span class="f">β<sub>E,g(s)</sub></span> + <span class="r">u<sub>E,s</sub></span>) × Expansion<sub>i</sub>
+                + ε<sub>i</sub>,        ε<sub>i</sub> ~ Student-t(ν, σ)</div>
+<pre>glmmTMB(trend ~ 0 + group + group:cat3 + (1 + cat3 | species_code),
+        family = t_family())</pre>
+  <p>Compared with the main model, each fixed coefficient now carries the subscript <i>g</i>(<i>s</i>): every group has its own Stable-area baseline (β<sub>0,g</sub>, from <code>0 + group</code>) and its own Contraction and Expansion effects (β<sub>C,g</sub>, β<sub>E,g</sub>, from <code>group:cat3</code>). <code>0 +</code> removes the global intercept so each group's baseline is estimated directly rather than as an offset from a reference group. <code>(1 + cat3 | species_code)</code> is unchanged, so every group's estimate is still an average over its <em>species</em>, not its routes. Group enters as a fixed effect rather than a random one because we want a separate estimate for each group, and 11 groups is too few to estimate a between-group variance reliably. Each group's Contraction − Expansion difference is β<sub>C,g</sub> − β<sub>E,g</sub>.</p>
+
+  <h3>Do groups differ?</h3>
+  <p>The 11 group estimates always look somewhat different, because each carries noise. To test whether the differences are real, we compare <code>fit_g</code> with a null model in which groups keep their own baselines but share one set of category effects:</p>
+<div class="eq"><span class="lbl">fit_g0</span>  trend<sub>i</sub> = (<span class="f">β<sub>0,g(s)</sub></span> + <span class="r">u₀ₛ</span>)
+                + (<span class="f">β<sub>C</sub></span> + <span class="r">u<sub>C,s</sub></span>) × Contraction<sub>i</sub>
+                + (<span class="f">β<sub>E</sub></span> + <span class="r">u<sub>E,s</sub></span>) × Expansion<sub>i</sub>
+                + ε<sub>i</sub>,        ε<sub>i</sub> ~ Student-t(ν, σ)</div>
+<pre>glmmTMB(trend ~ 0 + group + cat3 + (1 + cat3 | species_code),
+        family = t_family())</pre>
+  <p>The only difference is the subscript <i>g</i>(<i>s</i>) on β<sub>C</sub> and β<sub>E</sub>. <code>fit_g0</code> has 13 fixed effects (11 baselines + 2 shared category effects); <code>fit_g</code> has 33 (11 baselines + 22 group-specific category effects). The random effects, σ and ν are the same in both. A likelihood-ratio test asks whether the 20 extra parameters improve the fit more than chance would: twice the difference in log-likelihood, compared with a χ² distribution on 20 degrees of freedom. Both models are fitted by maximum likelihood, which this comparison requires.</p>
+  <p>Result: <strong>χ² = 66.7, df = 20, p = 6 × 10⁻⁷</strong>, and <code>fit_g</code>'s AIC is lower by 26.7. The category effect genuinely differs among groups. <code>fit_g0</code> serves only as this reference point; all group estimates come from <code>fit_g</code>.</p>
+  <p>Group explains only a small part of how species differ, though. In <code>fit_g0</code>, each species' category effects deviate from the single shared β<sub>C</sub> and β<sub>E</sub>; in <code>fit_g</code>, from their own group's. Moving from one to the other shrinks the species-level spread in the Contraction effect from SD 1.61 to 1.50, and in the Expansion effect from 1.87 to 1.79: about 8–13% of the variance. Most of the heterogeneity is between species <em>within</em> the same group.</p>
+</section>
+
+<figure class="wrap" id="fig4">
+  <p class="ft">Figure 3. Contraction − Expansion gap by bird group</p>
+  <p class="fs">Average-species estimate within each group from the group model (fit_g), with 95% confidence interval, %/yr. Hover or tap a row for details.</p>
+  <div class="legend"><span><i class="dot exp"></i>Interval excludes zero</span><span><i class="dot st"></i>Interval includes zero</span></div>
+  <svg id="f4" viewBox="0 0 680 400" role="img" aria-label="Group estimates ranging from −1.55 for eastern forests to +2.04 for coastal"></svg>
+  <figcaption>Groups are sorted by estimate. The dashed line marks no difference; the solid line marks the all-species estimate of −0.76. Small groups (urban/suburban with 4 species, coastal with only 25 Contraction and 23 Expansion routes) have very wide intervals.</figcaption>
+</figure>
+
+<section class="prose">
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Group</th><th class="n">Species</th><th class="n">Routes C / E</th><th class="n">C − E</th><th class="n">95% CI</th><th class="n">p</th><th class="n">BH q</th></tr></thead>
+      <tbody>
+        <tr class="hl"><td>Eastern forests</td><td class="n">68</td><td class="n">8,028 / 6,284</td><td class="n">−1.55</td><td class="n">−2.15 to −0.96</td><td class="n">&lt;0.001</td><td class="n">&lt;0.001</td></tr>
+        <tr class="hl"><td>Boreal forests</td><td class="n">40</td><td class="n">3,853 / 299</td><td class="n">−1.53</td><td class="n">−2.66 to −0.41</td><td class="n">0.007</td><td class="n">0.027</td></tr>
+        <tr class="hl"><td>Grasslands</td><td class="n">38</td><td class="n">2,144 / 2,395</td><td class="n">−1.39</td><td class="n">−2.30 to −0.49</td><td class="n">0.002</td><td class="n">0.013</td></tr>
+        <tr><td>Generalists</td><td class="n">47</td><td class="n">6,445 / 4,272</td><td class="n">−0.70</td><td class="n">−1.41 to 0.01</td><td class="n">0.052</td><td class="n">0.12</td></tr>
+        <tr><td>Western forests</td><td class="n">72</td><td class="n">2,962 / 1,114</td><td class="n">−0.64</td><td class="n">−1.29 to 0.02</td><td class="n">0.056</td><td class="n">0.12</td></tr>
+        <tr><td>Aridlands</td><td class="n">67</td><td class="n">779 / 1,384</td><td class="n">−0.42</td><td class="n">−1.15 to 0.30</td><td class="n">0.25</td><td class="n">0.40</td></tr>
+        <tr><td>Urban/suburban</td><td class="n">4</td><td class="n">145 / 712</td><td class="n">+0.07</td><td class="n">−2.68 to 2.81</td><td class="n">0.96</td><td class="n">0.96</td></tr>
+        <tr><td>Marshlands</td><td class="n">57</td><td class="n">1,344 / 746</td><td class="n">+0.10</td><td class="n">−0.73 to 0.93</td><td class="n">0.81</td><td class="n">0.89</td></tr>
+        <tr><td>Waterbirds</td><td class="n">29</td><td class="n">3,624 / 536</td><td class="n">+0.57</td><td class="n">−0.56 to 1.70</td><td class="n">0.32</td><td class="n">0.42</td></tr>
+        <tr><td>Subtropical forests</td><td class="n">24</td><td class="n">115 / 277</td><td class="n">+0.80</td><td class="n">−0.86 to 2.45</td><td class="n">0.35</td><td class="n">0.42</td></tr>
+        <tr><td>Coastal</td><td class="n">21</td><td class="n">25 / 23</td><td class="n">+2.04</td><td class="n">−0.83 to 4.90</td><td class="n">0.16</td><td class="n">0.30</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Negative values mean Contraction routes trend worse than Expansion routes, as predicted. The "BH q" column corrects for testing 11 groups at once, using the Benjamini–Hochberg false discovery rate. Shaded rows remain significant after correction (q &lt; 0.05).</p>
+  <h3>Reading the group results</h3>
+  <ul>
+    <li><strong>Clear support in three groups:</strong> eastern forests (−1.55), boreal forests (−1.53) and grasslands (−1.39), about twice the all-species average. Boreal forests rest on only 299 Expansion routes, hence the wide interval.</li>
+    <li><strong>Suggestive but not significant</strong> in generalists (−0.70) and western forests (−0.64): both have p ≈ 0.05 on their own, but not after correcting for 11 tests. Aridlands (−0.42) shows no clear association.</li>
+    <li><strong>No detectable effect</strong> in the three water-associated groups (waterbirds, marshlands, coastal), nor in subtropical forests or urban/suburban species. Their estimates lean slightly the "wrong" way (positive), but none comes close to significance. One possible explanation is that wetland and water birds track water availability more closely than the climate variables behind the SDMs. This analysis doesn't test that.</li>
+    <li>"No detectable effect" is not the same as "no effect". Coastal, urban/suburban and subtropical estimates rest on few species or few routes, and their intervals are compatible with effects as large as the strongest groups'.</li>
+  </ul>
+</section>
+
+<section class="prose">
+  <h2><span class="num">10</span>Conclusion</h2>
+  <ul>
+    <li><strong>The direction matches the hypothesis.</strong> Within the average species, trends run Contraction &lt; Stable &lt; Expansion. The Contraction − Expansion gap is −0.76 %/yr (95% CI −1.03 to −0.49, p &lt; 0.001).</li>
+    <li><strong>The effect is asymmetric.</strong> Expansion areas stand out clearly (+0.55 vs Stable); Contraction areas only slightly (−0.21 vs Stable, p = 0.027).</li>
+    <li><strong>The result is robust.</strong> Precision weighting, the full 7-level gradient and a model-free sign test all point the same way with similar size.</li>
+    <li><strong>The pattern is not universal.</strong> Species vary around the average by much more than the average itself (SD 2.37 vs mean −0.76). About two-thirds of species follow the prediction and one-third go the other way.</li>
+    <li><strong>The effect differs by bird group.</strong> It is clearest in eastern forests, boreal forests and grasslands (−1.4 to −1.6 %/yr) and undetectable in the water-associated groups. Group accounts for only a small share of the variation between species, however; species within the same group still differ widely.</li>
+    <li><strong>It is a weak predictor at the route level.</strong> The category explains about 0.6% of within-species trend variation. It supports the SDMs at the level of the typical species, but it is not a useful forecast for any particular route or species.</li>
+  </ul>
+</section>
+
+<section class="prose">
+  <h2><span class="num">11</span>Caveats</h2>
+  <ul>
+    <li><strong>Trend uncertainty is not carried through.</strong> Each route contributes its posterior mean trend, and its own uncertainty is ignored. The precision-weighted check gave the same answer. Fitting the category effect inside the Stan model would propagate uncertainty fully.</li>
+    <li><strong>Neighbouring routes are correlated.</strong> The iCAR model smooths trends across neighbouring routes, and SDM categories come in spatial blocks, so routes within a species are not independent. This mostly affects the precision of individual species' estimates. The population-average result draws its uncertainty from variation between species, so it is much less affected.</li>
+    <li><strong>Species-level effects are still assumed normal.</strong> The Student-t handles extreme <em>routes</em>, not extreme <em>species</em>. Figure 2's long tail suggests a few species with very strong effects, which may inflate the between-species SDs somewhat.</li>
+    <li><strong>Range position is a possible confounder.</strong> Expansion areas often lie at the poleward or upslope edge of a range. Part of the effect could reflect range position rather than climate suitability as such. Adding each route's position relative to its species' range centre would test this.</li>
+    <li><strong>The timing differs.</strong> The SDM categories describe projected change to 2025; the trends describe what happened 2010–2025. The test asks whether projected suitability change lines up with recent population change, not whether one causes the other.</li>
+  </ul>
+</section>
+
+<section class="prose">
+  <h2><span class="num">12</span>Glossary</h2>
+  <dl class="gloss">
+    <dt>Mixed model</dt>
+    <dd>A regression with both fixed effects (population-average relationships) and random effects (group-specific deviations drawn from a common distribution). "Mixed" refers to having both.</dd>
+    <dt>LMM vs GLMM</dt>
+    <dd>A linear mixed model assumes normally distributed errors. A generalized LMM allows other error distributions (Poisson, binomial, negative binomial, Student-t) and, where needed, a link function. The main model here is a GLMM with Student-t errors and an identity link.</dd>
+    <dt>Student-t errors</dt>
+    <dd>A residual distribution shaped like the normal but with heavier tails, set by its degrees of freedom (ν). Low ν (here 3.4) means extreme values are expected occasionally, so they pull the estimates less. As ν grows, the Student-t becomes the normal.</dd>
+    <dt>Random intercept</dt>
+    <dd>Each group (species) gets its own baseline level, estimated as a deviation from the overall intercept.</dd>
+    <dt>Random slope</dt>
+    <dd>Each group gets its own version of a predictor's effect, estimated as a deviation from the average effect.</dd>
+    <dt>Partial pooling / shrinkage</dt>
+    <dd>Group-specific estimates are pulled toward the overall average, more strongly for groups with little data. It sits between "complete pooling" (ignore groups) and "no pooling" (a separate fit per group).</dd>
+    <dt>Maximum likelihood</dt>
+    <dd>Estimation by choosing the parameter values under which the observed data are most probable. <code>glmmTMB</code> uses it by default; it also makes AIC and likelihood-ratio comparisons between models valid.</dd>
+    <dt>AIC</dt>
+    <dd>Akaike information criterion: a measure of fit that penalises extra parameters. Lower is better; differences above about 10 are usually treated as decisive.</dd>
+    <dt>Likelihood-ratio test</dt>
+    <dd>Compares two nested models (one a simplified version of the other) by how much better the fuller model fits, relative to the extra parameters it uses.</dd>
+  </dl>
+</section>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const SP = [["ABDU","American Black Duck",17,25,0,-10.55,-9.958,-10.512,-0.038],["ABTO","Abert's Towhee",2,18,2,-2.508,-0.331,2.406,-4.914],["ACFL","Acadian Flycatcher",105,866,32,-0.219,1.317,0.993,-1.212],["ACWO","Acorn Woodpecker",13,103,6,4.962,3.301,4.501,0.461],["ALFL","Alder Flycatcher",180,140,0,-2.332,-0.721,-0.274,-2.058],["ALHU","Allen's Hummingbird",2,15,2,-4.586,-5.518,-5.417,0.831],["AMAV","American Avocet",11,62,29,0.44,-0.063,1.611,-1.171],["AMBI","American Bittern",56,146,4,-2.873,-3.391,-2.971,0.098],["AMCO","American Coot",26,205,21,-5.48,-4.887,-4.614,-0.867],["AMCR","American Crow",197,2301,44,-1.735,-1.508,-1.502,-0.233],["AMDI","American Dipper",9,94,2,-1.717,-1.636,-1.278,-0.439],["AMGO","American Goldfinch",439,1088,45,-2.64,-1.812,-2.093,-0.547],["AMKE","American Kestrel",57,1727,11,1.365,-0.936,-1.05,2.415],["AMOY","American Oystercatcher",0,5,0,-3.252,-3.065,-2.758,-0.494],["AMPI","American Pipit",0,2,0,-2.818,-2.627,-2.268,-0.55],["AMRE","American Redstart",359,521,13,1.569,0.787,1.964,-0.395],["AMRO","American Robin",427,1903,3,-1.625,-1.25,-1.049,-0.575],["AMWI","American Wigeon",58,44,1,-4.245,-4.33,-2.561,-1.684],["AMWO","American Woodcock",27,65,1,-7.378,-6.157,-5.585,-1.794],["ANHI","Anhinga",6,116,54,3.687,3.712,5.269,-1.582],["ANHU","Anna's Hummingbird",3,150,11,-4.504,-1.799,-2.919,-1.585],["ATFL","Ash-throated Flycatcher",7,394,76,-0.093,0.558,1.021,-1.115],["ATTW","American Three-toed Woodpecker",29,18,4,-4.637,-3.967,-4.841,0.204],["AUOR","Audubon's Oriole",0,16,4,-3.058,-2.942,-1.67,-1.388],["AWPE","American White Pelican",21,114,17,-2.348,0.14,0.902,-3.251],["BACS","Bachman's Sparrow",74,26,6,3.562,3.363,4.332,-0.77],["BADO","Barred Owl",3,999,54,1.476,1.774,2.224,-0.748],["BAEA","Bald Eagle",194,770,65,7.487,8.635,10.562,-3.075],["BAGO","Barrow's Goldeneye",3,0,0,-8.667,-6.857,-7.16,-1.507],["BAIS","Baird's Sparrow",31,5,1,-7.144,-5.946,-4.458,-2.686],["BANS","Bank Swallow",45,446,48,-5.236,-7.5,-9.964,4.728],["BAOR","Baltimore Oriole",118,855,298,-2.441,-2.271,-2.58,0.139],["BARS","Barn Swallow",14,2511,108,-0.448,-2.375,-2.85,2.402],["BAWW","Black-and-white Warbler",166,296,130,0.469,1.148,0.77,-0.302],["BBCU","Black-billed Cuckoo",199,280,11,-4.52,-1.866,-1.54,-2.98],["BBIH","Broad-billed Hummingbird",2,2,0,-1.09,-1.066,-0.505,-0.585],["BBMA","Black-billed Magpie",69,365,13,1.663,-1.345,-0.486,2.149],["BBWA","Bay-breasted Warbler",2,0,0,-1.428,-1.168,-0.642,-0.786],["BBWD","Black-bellied Whistling-Duck",0,136,21,7.928,7.977,12.8,-4.872],["BBWO","Black-backed Woodpecker",31,18,0,1.715,5.263,6.234,-4.519],["BCCH","Black-capped Chickadee",165,906,95,-1.971,-1.85,-0.183,-1.788],["BCFL","Brown-crested Flycatcher",2,40,15,2.307,1.655,1.61,0.697],["BCHU","Black-chinned Hummingbird",8,184,94,-4.031,-3.889,-3.683,-0.349],["BCNH","Black-crowned Night-Heron",7,184,14,-2.357,-1.953,-2.6,0.242],["BCSP","Black-chinned Sparrow",10,21,4,-2.362,-1.267,-1.456,-0.906],["BCTI","Black-crested Titmouse",0,50,17,4.122,4.344,6.002,-1.879],["BCVI","Black-capped Vireo",2,5,1,8.04,7.709,10.938,-2.898],["BEKI","Belted Kingfisher",102,1107,64,-0.875,-0.791,-0.699,-0.176],["BESP","Bell's Sparrow",6,16,2,-3.079,-3.33,-3.165,0.085],["BETH","Bendire's Thrasher",10,11,6,-2.134,-2.356,-2.533,0.399],["BEVI","Bell's Vireo",34,187,52,0.176,1.297,1.33,-1.154],["BEWR","Bewick's Wren",19,369,93,-0.698,-0.308,0.756,-1.454],["BGGN","Blue-gray Gnatcatcher",41,1361,167,-1.374,-1.667,-1.591,0.217],["BHCO","Brown-headed Cowbird",28,2621,97,-2.44,-1.55,-2.516,0.076],["BHGR","Black-headed Grosbeak",27,305,0,-0.67,-0.415,0.201,-0.871],["BHNU","Brown-headed Nuthatch",215,190,7,-3.094,-0.783,-0.005,-3.088],["BHVI","Blue-headed Vireo",282,57,0,0.679,0.997,1.776,-1.097],["BLBW","Blackburnian Warbler",167,66,1,-0.7,-1.434,0.684,-1.384],["BLGR","Blue Grosbeak",66,1015,177,1.927,0.648,3.303,-1.376],["BLJA","Blue Jay",116,1797,24,1.055,-0.527,0.067,0.988],["BLPH","Black Phoebe",7,139,24,-2.096,-0.52,0.982,-3.078],["BLPW","Blackpoll Warbler",8,1,0,1.788,1.182,2.073,-0.285],["BLSK","Black Skimmer",1,19,0,-2.076,-0.6,-0.125,-1.951],["BLSW","Black Swift",6,8,1,2.235,1.934,3.165,-0.93],["BLTE","Black Tern",20,45,2,-0.127,0.157,1.567,-1.694],["BLVU","Black Vulture",54,667,141,4.769,2.702,2.875,1.894],["BNST","Black-necked Stilt",1,117,11,-1.406,-0.552,-0.235,-1.171],["BOBO","Bobolink",286,282,30,-5.344,-4.357,-2.528,-2.816],["BOCH","Boreal Chickadee",13,0,0,-8.934,-7.066,-7.401,-1.534],["BOSP","Botteri's Sparrow",7,1,1,-4.884,-2.778,-1.002,-3.883],["BRBL","Brewer's Blackbird",116,709,26,-6.145,-3.146,-5.422,-0.723],["BRCR","Brown Creeper",235,207,8,0.693,1.083,-1.126,1.819],["BROC","Bronzed Cowbird",0,48,7,-6.055,-5.705,-8.208,2.153],["BRPE","Brown Pelican",1,28,1,2.922,1.936,2.343,0.578],["BRSP","Brewer's Sparrow",29,367,31,-3.373,-2.567,-1.598,-1.775],["BRTH","Brown Thrasher",383,1163,84,-1.681,-1.436,-0.441,-1.239],["BRTI","Bridled Titmouse",1,4,2,0.033,-0.076,0.276,-0.243],["BTAH","Broad-tailed Hummingbird",21,67,17,-2.095,-1.278,-0.038,-2.057],["BTBW","Black-throated Blue Warbler",142,57,2,-1.84,-2.708,0.902,-2.742],["BTGN","Black-tailed Gnatcatcher",1,80,4,-4.095,-3.267,-3.525,-0.57],["BTGR","Boat-tailed Grackle",9,80,0,2.007,1.345,2.261,-0.254],["BTNW","Black-throated Green Warbler",255,75,0,-3.859,-3.563,-3.326,-0.533],["BTPI","Band-tailed Pigeon",18,84,9,-2.004,0.821,3.134,-5.139],["BTSP","Black-throated Sparrow",4,254,39,0.517,-0.299,1.926,-1.409],["BTYW","Black-throated Gray Warbler",33,130,30,-1.078,-1.574,-0.588,-0.49],["BUFF","Bufflehead",10,3,0,11.765,10.407,12.471,-0.706],["BUOR","Bullock's Oriole",7,581,125,0.384,-0.167,0.832,-0.448],["BUOW","Burrowing Owl",3,250,58,-0.862,0.336,1.619,-2.481],["BUSH","Bushtit",28,198,42,-0.627,-0.163,1.775,-2.402],["BWHA","Broad-winged Hawk",89,425,137,1.171,1.5,0.385,0.786],["BWTE","Blue-winged Teal",28,260,1,-2.368,-2.977,-2.398,0.03],["BWWA","Blue-winged Warbler",89,87,77,-2.882,-4.576,-3.661,0.78],["CACH","Carolina Chickadee",5,927,50,0.588,-1.358,-1.167,1.755],["CACW","Cactus Wren",2,147,20,-2.85,-2.965,-2.307,-0.543],["CAEG","Cattle Egret",0,482,11,-3.135,-2.75,-4.993,1.858],["CAFI","Cassin's Finch",91,198,4,-2.369,-1.069,0.472,-2.84],["CAGU","California Gull",24,70,15,-4.637,-3.267,-6.568,1.931],["CAHU","Calliope Hummingbird",20,53,1,-1.933,-2.15,-1.725,-0.208],["CAJA","Canada Jay",33,11,1,-4.77,-3.354,-3.534,-1.236],["CAKI","Cassin's Kingbird",31,41,21,-1.806,-1.309,3.756,-5.562],["CALT","California Towhee",6,66,21,-1.316,-1.093,-0.643,-0.674],["CANG","Canada Goose",563,1265,23,1.139,0.806,2.885,-1.746],["CANT","Canyon Towhee",7,101,14,0.408,-2.994,0.821,-0.414],["CANV","Canvasback",23,16,4,-5.949,-4.358,-4.712,-1.237],["CANW","Canyon Wren",2,67,20,-1.783,-0.936,-0.06,-1.723],["CAQU","California Quail",26,173,33,0.835,0.782,1.493,-0.658],["CARW","Carolina Wren",9,1253,208,2.134,2.587,9.619,-7.485],["CASJ","California Scrub-Jay",8,79,10,-1.997,-1.224,0.013,-2.01],["CASP","Cassin's Sparrow",5,219,27,-4.842,-3.912,-8.735,3.893],["CASW","Cave Swallow",14,44,28,-12.874,-11.672,-11.037,-1.837],["CATE","Caspian Tern",3,34,1,-4.459,-4.975,-5.502,1.043],["CATH","California Thrasher",12,34,1,0.784,0.637,2.605,-1.821],["CAVI","Cassin's Vireo",8,8,12,-1.57,-2.276,-2.867,1.297],["CAWA","Canada Warbler",52,32,0,0.042,-0.197,0.493,-0.452],["CBCH","Chestnut-backed Chickadee",16,102,5,4.844,1.572,2.853,1.991],["CBTH","Curve-billed Thrasher",1,153,22,-0.938,-0.5,-0.652,-0.287],["CCLO","Chestnut-collared Longspur",33,38,3,-1.975,-1.444,-2.261,0.286],["CCSP","Clay-colored Sparrow",133,91,4,-5.387,-7.503,-8.651,3.264],["CEDW","Cedar Waxwing",456,1028,25,-3.707,-3.707,1.098,-4.805],["CERW","Cerulean Warbler",36,62,26,-0.258,-1.827,-1.78,1.522],["CHRA","Chihuahuan Raven",0,110,13,-0.4,-0.471,3.885,-4.284],["CHSP","Chipping Sparrow",368,1084,45,-2.006,-2.87,-3.12,1.114],["CHSW","Chimney Swift",16,1608,180,-3.4,-3.689,-1.465,-1.935],["CHUK","Chukar",7,101,6,6.826,5.596,6.093,0.733],["CITE","Cinnamon Teal",23,65,12,-3.76,-3.4,-2.585,-1.174],["CLGR","Clark's Grebe",0,13,2,-2.902,-2.652,-3.078,0.176],["CLNU","Clark's Nutcracker",74,103,6,-2.815,-2.544,-1.307,-1.508],["CLRA","Clapper Rail",1,24,0,-1.9,-2.562,-2.112,0.213],["CLSW","Cliff Swallow",76,1484,326,-2.205,-1.531,9.075,-11.28],["CMWA","Cape May Warbler",5,0,0,-0.167,-0.176,0.494,-0.661],["COFL","Cordilleran Flycatcher",20,46,5,2.851,2.415,3.168,-0.318],["COGA","Common Gallinule",0,101,4,2.058,2.276,3.477,-1.42],["COGD","Common Ground-Dove",8,186,50,-1.169,-0.503,-1.218,0.048],["COGO","Common Goldeneye",18,1,0,-6.937,-6.105,-6.224,-0.714],["COGR","Common Grackle",109,1866,131,-1.027,-3.492,-0.513,-0.514],["COHA","Cooper's Hawk",168,975,239,-0.448,-0.558,-0.046,-0.401],["COHU","Costa's Hummingbird",6,28,7,0.985,1.346,1.286,-0.301],["COKI","Couch's Kingbird",0,26,2,2.962,3.115,5.381,-2.419],["COLO","Common Loon",175,34,0,-1.605,-1.567,-1.067,-0.539],["COME","Common Merganser",104,195,2,0.464,0.768,1.464,-1.0],["CONI","Common Nighthawk",24,1065,268,-2.17,-0.835,0.768,-2.938],["CONW","Connecticut Warbler",1,0,0,-6.688,-5.301,-5.378,-1.31],["COPA","Common Pauraque",0,8,11,-5.781,-5.613,-5.685,-0.097],["COPO","Common Poorwill",7,154,12,-0.653,0.532,1.471,-2.124],["CORA","Common Raven",190,1336,7,4.562,2.427,2.301,2.261],["COTE","Common Tern",6,5,1,-5.292,-4.547,-3.837,-1.456],["COYE","Common Yellowthroat",494,1696,55,0.061,-0.56,1.38,-1.319],["CRCA","Crested Caracara",3,74,30,4.931,2.896,9.094,-4.162],["CRTH","Crissal Thrasher",1,54,3,-3.224,-1.672,-3.281,0.057],["CSWA","Chestnut-sided Warbler",197,158,5,0.313,1.227,4.013,-3.699],["CWWI","Chuck-will's-widow",4,473,20,-0.266,-0.599,-2.282,2.015],["DCCO","Double-crested Cormorant",69,216,40,-1.391,-2.902,0.258,-1.649],["DCFL","Dusky-capped Flycatcher",2,0,1,1.687,1.668,3.175,-1.488],["DEJU","Dark-eyed Junco",258,274,6,-2.68,-1.261,-1.584,-1.097],["DICK","Dickcissel",17,215,688,-2.104,0.255,-0.323,-1.782],["DOWO","Downy Woodpecker",103,1989,90,-1.597,-0.832,-2.047,0.45],["DUFL","Dusky Flycatcher",63,113,6,-1.047,-0.661,0.803,-1.851],["DUGR","Dusky Grouse",8,20,1,2.035,2.084,2.745,-0.71],["EABL","Eastern Bluebird",54,1408,115,-0.967,-1.17,-0.499,-0.468],["EAGR","Eared Grebe",5,51,1,-0.434,-0.972,-0.615,0.181],["EAKI","Eastern Kingbird",173,1479,123,-2.945,-0.765,0.07,-3.015],["EAME","Eastern Meadowlark",100,1045,65,-3.089,-2.769,-3.059,-0.031],["EAPH","Eastern Phoebe",69,1069,207,-1.928,-0.883,-0.883,-1.045],["EASO","Eastern Screech-Owl",30,160,25,-2.915,-2.179,-0.799,-2.116],["EATO","Eastern Towhee",357,1098,41,-4.699,-1.428,3.445,-8.143],["EAWP","Eastern Wood-Pewee",167,1419,85,1.234,1.514,2.973,-1.739],["ETSP","Eurasian Tree Sparrow",0,7,50,2.62,2.506,8.151,-5.531],["EUCD","Eurasian Collared-Dove",125,1170,314,4.24,1.801,3.669,0.571],["EUST","European Starling",69,2392,237,-1.575,-1.677,-1.69,0.115],["EVGR","Evening Grosbeak",84,111,6,-11.963,-2.67,-2.762,-9.201],["EWPW","Eastern Whip-poor-will",54,179,18,-4.029,-2.337,1.096,-5.125],["FEHA","Ferruginous Hawk",19,191,14,-2.072,-0.82,-1.006,-1.066],["FICR","Fish Crow",222,318,65,1.159,2.223,7.081,-5.922],["FISP","Field Sparrow",181,1064,72,-3.02,-1.68,-0.7,-2.32],["FLSJ","Florida Scrub-Jay",3,2,0,-2.291,-3.443,-3.05,0.76],["FOSP","Fox Sparrow",21,8,10,-2.047,-1.252,4.19,-6.237],["FOTE","Forster's Tern",6,60,5,-7.444,-3.312,-2.26,-5.184],["FRGU","Franklin's Gull",12,4,0,5.327,3.968,5.265,0.062],["FUWD","Fulvous Whistling-Duck",4,28,1,-2.863,-3.45,-2.785,-0.077],["GADW","Gadwall",22,281,2,-3.586,-2.112,-3.99,0.403],["GAQU","Gambel's Quail",4,44,9,2.653,0.727,0.609,2.044],["GBAN","Groove-billed Ani",0,7,6,0.771,1.03,1.385,-0.613],["GBBG","Great Black-backed Gull",0,8,1,-1.478,-1.157,-2.162,0.684],["GBHE","Great Blue Heron",3,2245,56,-1.998,-2.092,-2.987,0.989],["GBTE","Gull-billed Tern",1,18,2,-3.773,-4.381,-4.588,0.815],["GCFL","Great Crested Flycatcher",89,1513,92,0.419,0.12,-0.032,0.451],["GCKI","Golden-crowned Kinglet",146,93,8,-4.604,-5.554,-6.05,1.446],["GCWA","Golden-cheeked Warbler",0,1,3,1.42,1.607,3.065,-1.644],["GFWO","Golden-fronted Woodpecker",8,68,11,0.161,0.505,0.775,-0.614],["GGOW","Great Gray Owl",2,0,1,-1.034,-0.859,-0.29,-0.744],["GHOW","Great Horned Owl",26,1194,27,-2.174,-1.904,-1.279,-0.895],["GIFL","Gilded Flicker",8,5,1,-0.362,-0.098,2.018,-2.38],["GIWO","Gila Woodpecker",1,25,1,1.045,0.331,0.366,0.679],["GKIS","Great Kiskadee",0,13,4,-0.244,-0.012,0.443,-0.687],["GLIB","Glossy Ibis",8,35,2,3.214,2.563,2.625,0.589],["GOEA","Golden Eagle",7,389,7,-1.433,-1.124,-1.56,0.127],["GRAK","Gray Kingbird",0,6,0,-4.484,-4.309,-4.15,-0.335],["GRAP","Gray Partridge",51,37,42,5.475,7.491,9.852,-4.377],["GRCA","Gray Catbird",269,1504,48,-1.241,-0.154,0.616,-1.858],["GREG","Great Egret",4,581,28,-0.874,-1.026,-2.507,1.632],["GRFL","Gray Flycatcher",26,114,21,0.215,-1.026,1.587,-1.372],["GRHA","Gray Hawk",4,4,0,1.969,1.293,2.204,-0.235],["GRHE","Green Heron",75,996,137,-1.375,-1.712,-1.441,0.066],["GRJA","Green Jay",1,22,3,1.707,1.842,1.363,0.343],["GRPC","Greater Prairie-Chicken",4,48,5,-2.509,-1.332,-0.924,-1.585],["GRRO","Greater Roadrunner",2,271,16,0.976,0.472,0.466,0.509],["GRSG","Greater Sage-Grouse",33,42,2,-0.948,-1.339,-1.858,0.91],["GRSP","Grasshopper Sparrow",150,540,184,-6.859,-5.853,-7.091,0.232],["GRVI","Gray Vireo",3,14,12,1.481,2.917,3.643,-2.162],["GRWA","Grace's Warbler",1,4,0,3.191,3.231,4.303,-1.113],["GTGR","Great-tailed Grackle",17,211,55,0.713,0.827,1.499,-0.787],["GTTO","Green-tailed Towhee",83,126,29,-0.701,0.092,0.789,-1.49],["GWGU","Glaucous-winged Gull",0,6,0,-3.751,-3.569,-3.322,-0.429],["GWTE","Green-winged Teal",21,88,0,-0.074,-0.344,0.332,-0.406],["GWWA","Golden-winged Warbler",43,42,19,0.485,6.049,8.273,-7.789],["HAFL","Hammond's Flycatcher",73,100,8,-0.742,0.033,-1.394,0.652],["HASH","Harris's Hawk",9,34,4,-0.823,-3.384,-3.312,2.488],["HAWO","Hairy Woodpecker",286,1151,38,0.543,1.127,-0.832,1.374],["HERG","Herring Gull",10,25,8,-3.074,-1.034,-1.637,-1.437],["HESP","Henslow's Sparrow",65,41,0,-4.511,-4.725,-4.577,0.066],["HETA","Hepatic Tanager",6,20,1,-1.753,-1.361,-2.412,0.658],["HETH","Hermit Thrush",161,87,6,-4.193,-2.621,-1.666,-2.527],["HEWA","Hermit Warbler",70,11,13,-2.87,-3.224,-3.868,0.998],["HOFI","House Finch",177,1447,216,3.239,1.463,0.662,2.577],["HOGR","Horned Grebe",1,0,0,-6.374,-5.054,-5.096,-1.279],["HOLA","Horned Lark",77,902,79,-3.228,-2.098,-3.2,-0.028],["HOME","Hooded Merganser",37,141,1,0.131,-0.013,2.316,-2.185],["HOOR","Hooded Oriole",5,89,14,-1.024,-0.36,-1.977,0.953],["HOSP","House Sparrow",8,2128,285,-0.971,-1.202,-0.943,-0.028],["HOWA","Hooded Warbler",100,614,38,0.66,0.657,1.749,-1.089],["HOWR","House Wren",217,1268,79,0.244,1.259,3.356,-3.113],["HUVI","Hutton's Vireo",7,132,3,-0.801,-1.832,-1.424,0.622],["INBU","Indigo Bunting",59,1451,56,-1.05,-1.795,-0.007,-1.043],["INDO","Inca Dove",9,102,42,-3.236,-5.908,-4.307,1.071],["JUTI","Juniper Titmouse",4,28,15,-1.426,-1.421,-0.241,-1.185],["KEWA","Kentucky Warbler",48,267,149,0.357,0.127,-0.13,0.487],["KILL","Killdeer",37,2251,36,1.163,-1.572,-3.031,4.194],["KIRA","King Rail",0,20,0,-8.096,-7.956,-8.228,0.132],["LAGO","Lawrence's Goldfinch",8,29,6,-1.172,-1.284,-0.643,-0.529],["LAGU","Laughing Gull",4,87,3,-4.0,-2.13,-1.175,-2.825],["LARB","Lark Bunting",61,193,29,-5.319,-5.511,-6.41,1.091],["LASP","Lark Sparrow",171,751,76,-0.88,-1.347,-0.028,-0.852],["LAZB","Lazuli Bunting",50,447,47,2.177,0.38,0.307,1.87],["LBCU","Long-billed Curlew",50,119,38,-3.452,-2.615,-2.949,-0.504],["LBHE","Little Blue Heron",0,311,35,-2.495,-2.085,-4.484,1.989],["LBTH","Long-billed Thrasher",10,15,3,3.404,2.716,1.901,1.503],["LBWO","Ladder-backed Woodpecker",6,173,47,-0.384,-1.49,-1.17,0.787],["LCSP","Le Conte's Sparrow",34,4,0,-16.179,-13.508,-14.689,-1.49],["LCTH","Le Conte's Thrasher",8,11,2,-5.363,-4.53,-4.935,-0.427],["LEBI","Least Bittern",1,35,3,2.571,2.352,3.278,-0.707],["LEFL","Least Flycatcher",202,193,0,-2.001,-1.808,-1.352,-0.649],["LEGO","Lesser Goldfinch",21,340,96,-1.789,-1.668,-1.059,-0.73],["LEGR","Least Grebe",0,5,0,0.555,0.779,1.54,-0.985],["LENI","Lesser Nighthawk",0,115,3,-2.437,-2.173,-2.679,0.242],["LEOW","Long-eared Owl",2,9,0,-5.525,-3.479,-3.404,-2.121],["LEPC","Lesser Prairie-Chicken",3,5,3,-7.863,-7.741,-7.97,0.107],["LESC","Lesser Scaup",25,35,0,-2.351,-2.649,-2.246,-0.105],["LETE","Least Tern",20,9,17,-4.514,-4.313,-8.255,3.742],["LEWO","Lewis's Woodpecker",5,87,10,5.465,5.65,6.167,-0.701],["LIMP","Limpkin",1,22,2,6.936,6.176,5.123,1.812],["LISP","Lincoln's Sparrow",65,54,0,-1.263,0.466,1.043,-2.306],["LOSH","Loggerhead Shrike",20,879,74,-2.165,-2.146,-1.375,-0.79],["LOWA","Louisiana Waterthrush",3,579,72,0.654,1.273,0.308,0.346],["LUWA","Lucy's Warbler",4,35,9,-1.255,-0.835,-0.387,-0.869],["MAGO","Marbled Godwit",15,65,7,2.051,-1.548,-1.804,3.855],["MALL","Mallard",1809,61,103,-3.679,-1.988,-4.543,0.864],["MAMU","Marbled Murrelet",0,2,0,-2.384,-2.189,-1.779,-0.606],["MAWA","Magnolia Warbler",109,19,0,-3.448,-5.198,-4.956,1.508],["MAWR","Marsh Wren",16,115,13,0.64,-0.143,0.75,-0.111],["MCLO","McCown's Longspur",21,1,0,0.924,0.828,1.627,-0.703],["MEJA","Mexican Jay",3,2,1,1.551,1.695,2.036,-0.485],["MERL","Merlin",84,29,0,2.795,3.71,4.753,-1.958],["MGWA","MacGillivray's Warbler",56,150,14,-0.768,-0.58,-0.004,-0.765],["MIKI","Mississippi Kite",14,496,22,7.51,7.748,8.454,-0.944],["MOBL","Mountain Bluebird",128,273,17,-3.076,-3.012,-2.667,-0.409],["MOCH","Mountain Chickadee",60,211,5,-2.951,-2.603,-1.542,-1.409],["MODO","Mourning Dove",9,2598,245,1.012,-0.388,-0.072,1.084],["MODU","Mottled Duck",5,48,6,-5.509,-6.64,-6.267,0.758],["MONQ","Montezuma Quail",3,2,0,3.998,2.568,3.704,0.293],["MOPL","Mountain Plover",12,27,5,-10.069,-8.105,-6.613,-3.456],["MOUQ","Mountain Quail",3,54,17,-1.257,-1.499,0.068,-1.325],["MOWA","Mourning Warbler",131,35,0,-3.33,-0.753,-0.404,-2.926],["MUDU","Muscovy Duck",0,2,0,2.673,2.917,3.931,-1.259],["MUSW","Mute Swan",16,21,4,-4.374,-6.514,-7.468,3.094],["NAWA","Nashville Warbler",136,82,14,-2.789,-3.882,-0.723,-2.066],["NECO","Neotropic Cormorant",4,29,2,2.646,0.387,0.721,1.926],["NESP","Nelson's Sparrow",12,3,1,-8.471,-7.186,-6.003,-2.468],["NOBO","Northern Bobwhite",7,1091,74,-1.648,-4.344,-4.22,2.572],["NOBT","Northern Beardless-Tyrannulet",0,4,0,-1.467,-1.263,-0.743,-0.724],["NOCA","Northern Cardinal",10,1611,330,-0.104,0.545,3.287,-3.391],["NOCR","Northwestern Crow",2,0,0,0.356,0.234,0.965,-0.609],["NOFL","Northern Flicker",411,2112,0,-1.96,-0.987,-0.509,-1.451],["NOGO","Northern Goshawk",30,59,3,-2.531,-4.264,-4.755,2.224],["NOHA","Northern Harrier",86,437,24,-4.117,-2.267,-2.862,-1.255],["NOMO","Northern Mockingbird",10,1532,173,-0.852,-1.867,-0.457,-0.395],["NOPA","Northern Parula",361,498,151,0.35,1.643,1.712,-1.361],["NOPI","Northern Pintail",6,156,8,-2.58,-2.821,-1.825,-0.755],["NOPO","Northern Pygmy-Owl",14,54,0,-2.784,-3.082,-2.73,-0.054],["NOWA","Northern Waterthrush",107,102,2,1.303,0.929,2.749,-1.447],["NRWS","Northern Rough-winged Swallow",85,1647,153,-2.912,-2.545,-3.218,0.306],["NSHO","Northern Shoveler",22,120,3,-1.489,-2.755,-4.016,2.527],["NSWO","Northern Saw-whet Owl",14,10,0,-3.306,-0.847,-0.498,-2.808],["NUWO","Nuttall's Woodpecker",17,62,1,-1.326,-1.38,-1.105,-0.221],["OATI","Oak Titmouse",11,58,18,-1.635,-1.191,-1.901,0.266],["OCWA","Orange-crowned Warbler",45,108,22,-0.378,-0.995,0.929,-1.307],["OLSP","Olive Sparrow",0,24,8,-1.686,-1.53,-0.443,-1.243],["OLWA","Olive Warbler",3,2,1,-2.1,-1.57,-1.459,-0.64],["OROR","Orchard Oriole",108,1159,226,-1.586,-1.153,2.837,-4.423],["OSFL","Olive-sided Flycatcher",111,174,14,-0.797,0.524,-0.775,-0.023],["OSPR","Osprey",96,380,42,2.385,1.729,2.691,-0.306],["OVEN","Ovenbird",190,356,7,-0.696,-0.032,-2.265,1.569],["PABU","Painted Bunting",0,249,130,0.654,0.946,0.839,-0.185],["PARE","Painted Redstart",2,1,0,-0.427,0.076,0.727,-1.153],["PAWA","Palm Warbler",23,0,0,-3.401,-2.718,-2.419,-0.983],["PAWR","Pacific Wren",19,58,10,-2.241,-3.267,-2.562,0.321],["PBGR","Pied-billed Grebe",12,131,14,-2.07,-2.259,-2.668,0.598],["PECO","Pelagic Cormorant",1,5,0,-3.139,-3.846,-3.545,0.406],["PEFA","Peregrine Falcon",6,131,16,2.624,2.335,2.177,0.447],["PHAI","Phainopepla",6,91,32,-1.343,-1.705,-1.039,-0.304],["PHVI","Philadelphia Vireo",6,0,0,-2.325,-1.872,-1.449,-0.876],["PIGR","Pine Grosbeak",4,3,3,-4.153,-2.711,-1.612,-2.541],["PIGU","Pigeon Guillemot",0,7,0,5.589,5.862,7.224,-1.635],["PIJA","Pinyon Jay",7,62,87,-2.2,-1.061,-1.219,-0.981],["PISI","Pine Siskin",102,132,3,-1.101,0.296,-0.455,-0.646],["PIWA","Pine Warbler",322,620,60,-0.195,1.857,3.526,-3.721],["PIWO","Pileated Woodpecker",77,1488,82,1.736,1.387,3.015,-1.28],["PLVI","Plumbeous Vireo",4,2,47,1.174,1.435,1.063,0.11],["PRAW","Prairie Warbler",120,533,98,-3.591,-2.964,-2.329,-1.262],["PRFA","Prairie Falcon",17,206,13,-1.565,-1.461,-3.876,2.311],["PROW","Prothonotary Warbler",1,450,58,0.819,1.046,2.386,-1.568],["PSFL","Pacific-slope Flycatcher",23,104,7,-0.789,-1.402,0.763,-1.552],["PUFI","Purple Finch",240,210,8,-2.232,-0.461,0.914,-3.146],["PUMA","Purple Martin",16,1153,168,2.131,-1.308,2.77,-0.64],["PYNU","Pygmy Nuthatch",39,92,7,-0.846,0.422,1.452,-2.298],["PYRR","Pyrrhuloxia",1,82,23,-3.476,-2.107,-3.078,-0.398],["RBGR","Rose-breasted Grosbeak",158,394,111,0.128,-0.863,0.489,-0.361],["RBGU","Ring-billed Gull",102,84,46,-9.201,-3.178,-5.964,-3.238],["RBNU","Red-breasted Nuthatch",335,267,8,-0.005,0.467,-0.097,0.092],["RBSA","Red-breasted Sapsucker",30,33,8,0.37,-0.334,0.448,-0.078],["RBWO","Red-bellied Woodpecker",41,1298,144,0.681,0.518,5.313,-4.631],["RCKI","Ruby-crowned Kinglet",82,78,3,-2.169,-2.338,-2.666,0.497],["RCSP","Rufous-crowned Sparrow",6,76,7,-4.362,-2.854,-2.115,-2.247],["RCWO","Red-cockaded Woodpecker",2,18,1,0.7,1.098,1.612,-0.913],["RECR","Red Crossbill",122,182,9,2.099,1.929,0.518,1.581],["REDH","Redhead",8,88,7,-1.056,-1.155,-0.179,-0.877],["REEG","Reddish Egret",0,8,0,2.602,2.846,3.852,-1.249],["REVI","Red-eyed Vireo",193,1471,127,1.27,0.986,1.362,-0.092],["RFWA","Red-faced Warbler",3,4,1,1.62,1.444,0.876,0.744],["RHWO","Red-headed Woodpecker",157,794,188,0.28,2.774,5.591,-5.311],["RIRA","Ridgway's Rail",2,3,1,3.799,3.124,4.414,-0.615],["RNDU","Ring-necked Duck",45,41,8,0.158,0.443,0.471,-0.313],["RNEP","Ring-necked Pheasant",65,548,85,-6.556,-2.964,-2.638,-3.918],["RNGR","Red-necked Grebe",2,0,0,-2.583,-2.075,-1.681,-0.901],["RNSA","Red-naped Sapsucker",80,122,16,-0.533,-0.538,-0.621,0.088],["ROPI","Rock Pigeon",12,1872,63,-0.769,-1.292,-2.933,2.164],["ROSP","Roseate Spoonbill",2,37,10,-5.178,-4.543,-4.116,-1.062],["ROWR","Rock Wren",25,341,16,-0.4,-0.419,0.425,-0.825],["ROYT","Royal Tern",1,21,1,6.52,5.855,5.683,0.837],["RSHA","Red-shouldered Hawk",40,1097,229,2.996,4.195,6.126,-3.129],["RTHA","Red-tailed Hawk",11,2763,73,-0.071,-0.507,1.02,-1.092],["RTHU","Ruby-throated Hummingbird",45,1405,70,-2.324,-2.245,-1.617,-0.707],["RUBL","Rusty Blackbird",4,0,0,-8.796,-6.957,-7.276,-1.52],["RUDU","Ruddy Duck",4,115,10,0.999,0.398,1.391,-0.392],["RUGR","Ruffed Grouse",67,182,3,-3.956,-3.6,-2.645,-1.311],["RUHU","Rufous Hummingbird",25,33,0,-5.087,-4.669,-4.575,-0.511],["RWBL","Red-winged Blackbird",67,2274,182,-0.437,-0.317,0.554,-0.991],["RWSP","Rufous-winged Sparrow",0,5,0,-6.994,-6.843,-6.983,-0.011],["SABS","Sagebrush Sparrow",7,151,6,-4.603,-5.007,-4.054,-0.549],["SACR","Sandhill Crane",196,160,39,2.855,1.645,0.905,1.95],["SAPH","Say's Phoebe",7,664,42,0.434,-0.181,0.12,0.315],["SATE","Sandwich Tern",0,6,0,2.922,3.169,4.213,-1.291],["SATH","Sage Thrasher",31,242,8,-1.266,-1.682,-1.186,-0.08],["SAVS","Savannah Sparrow",244,134,1,-7.317,-5.263,-4.828,-2.489],["SCOR","Scott's Oriole",9,113,25,-2.977,-2.736,-2.725,-0.251],["SCQU","Scaled Quail",4,128,10,-0.931,3.381,1.396,-2.327],["SCTA","Scarlet Tanager",330,678,101,-1.479,-1.475,-1.326,-0.153],["SEOW","Short-eared Owl",19,102,10,-3.583,-0.827,-4.664,1.081],["SESP","Seaside Sparrow",0,9,0,-3.195,-3.008,-2.694,-0.501],["SEWR","Sedge Wren",57,200,9,-4.661,-2.348,0.572,-5.234],["SNEG","Snowy Egret",2,139,47,-0.813,-1.571,-1.818,1.005],["SNKI","Snail Kite",0,1,2,2.821,2.986,5.073,-2.252],["SNPL","Snowy Plover",0,3,3,-3.196,-3.067,-1.999,-1.197],["SORA","Sora",87,107,5,0.692,0.241,-0.482,1.174],["SOSP","Song Sparrow",566,1296,77,-1.207,-0.123,1.133,-2.34],["SPPI","Sprague's Pipit",31,3,2,-9.135,-6.241,-6.225,-2.909],["SPSA","Spotted Sandpiper",70,340,9,-0.955,-2.209,-2.587,1.632],["SPTO","Spotted Towhee",59,389,87,-0.127,-0.2,1.433,-1.56],["SSHA","Sharp-shinned Hawk",68,156,9,-2.872,-3.062,-3.139,0.267],["STFL","Scissor-tailed Flycatcher",3,166,203,-3.937,-2.463,-1.217,-2.72],["STGR","Sharp-tailed Grouse",18,108,4,0.461,1.375,1.768,-1.307],["STHA","Short-tailed Hawk",0,6,0,2.098,2.336,3.282,-1.184],["STJA","Steller's Jay",73,227,5,-1.257,-1.274,-1.44,0.183],["STKI","Swallow-tailed Kite",10,126,11,5.512,2.218,2.096,3.416],["SUTA","Summer Tanager",6,807,89,1.067,1.017,1.061,0.006],["SWHA","Swainson's Hawk",24,488,86,0.898,0.5,-1.014,1.913],["SWSP","Swamp Sparrow",104,118,15,1.521,1.092,0.889,0.632],["SWTH","Swainson's Thrush",54,43,2,-1.624,0.627,0.691,-2.315],["SWWA","Swainson's Warbler",19,178,34,6.235,8.926,11.794,-5.559],["TEWA","Tennessee Warbler",18,0,0,4.879,3.789,5.037,-0.158],["TOSO","Townsend's Solitaire",43,102,2,-3.056,-3.293,-3.202,0.146],["TOWA","Townsend's Warbler",13,9,0,-2.65,-2.223,-1.839,-0.811],["TRBL","Tricolored Blackbird",5,19,0,-5.575,-5.966,-5.948,0.374],["TRES","Tree Swallow",336,1161,24,-2.109,-3.24,-3.051,0.942],["TRHE","Tricolored Heron",0,76,7,-2.961,-2.866,-1.3,-1.661],["TRKI","Tropical Kingbird",0,3,1,5.781,6.004,8.048,-2.268],["TRUS","Trumpeter Swan",16,6,6,11.191,11.71,15.62,-4.429],["TUTI","Tufted Titmouse",41,1198,130,1.151,0.371,3.169,-2.018],["TUVU","Turkey Vulture",6,2155,106,2.117,1.587,2.922,-0.804],["UPSA","Upland Sandpiper",31,196,145,-1.535,0.42,-0.024,-1.51],["VABU","Varied Bunting",0,21,1,-3.711,-3.564,-2.854,-0.857],["VASW","Vaux's Swift",15,37,1,-3.928,-1.869,-1.379,-2.55],["VATH","Varied Thrush",10,17,0,-5.517,-4.575,-4.521,-0.996],["VEER","Veery",175,278,10,0.762,-0.37,1.004,-0.242],["VEFL","Vermilion Flycatcher",1,77,6,2.63,3.077,2.945,-0.314],["VERD","Verdin",1,109,13,-1.449,-1.835,-6.512,5.063],["VESP","Vesper Sparrow",200,426,124,-3.825,-1.101,-2.751,-1.074],["VGSW","Violet-green Swallow",77,469,22,-2.18,-1.836,-1.289,-0.892],["VIRA","Virginia Rail",20,70,7,-4.016,-4.266,-3.818,-0.198],["VIWA","Virginia's Warbler",6,24,19,0.375,0.62,0.07,0.305],["WAVI","Warbling Vireo",103,1297,261,-1.222,0.555,0.876,-2.098],["WBNU","White-breasted Nuthatch",451,1178,158,1.756,0.581,-1.22,2.976],["WCSP","White-crowned Sparrow",52,84,0,-0.308,-0.412,0.239,-0.547],["WEBL","Western Bluebird",50,179,68,-1.081,-1.063,-0.876,-0.205],["WEGR","Western Grebe",3,64,3,-5.477,-4.776,-5.311,-0.166],["WEGU","Western Gull",0,13,0,-0.472,-0.258,0.381,-0.853],["WEKI","Western Kingbird",9,854,137,-3.165,-2.604,-2.558,-0.607],["WEME","Western Meadowlark",67,714,41,-3.625,-0.532,-1.364,-2.261],["WESO","Western Screech-Owl",4,27,5,-2.839,-1.487,-2.325,-0.514],["WETA","Western Tanager",64,334,16,0.933,1.338,3.638,-2.706],["WEVI","White-eyed Vireo",1,1065,55,1.179,2.806,1.52,-0.341],["WEWA","Worm-eating Warbler",47,156,41,0.337,-0.766,-0.236,0.573],["WEWP","Western Wood-Pewee",122,564,12,-0.473,-0.305,-0.217,-0.256],["WFIB","White-faced Ibis",15,63,20,0.204,-3.295,-4.18,4.384],["WHIB","White Ibis",0,230,3,0.911,1.33,-0.358,1.269],["WHWO","White-headed Woodpecker",18,50,3,1.098,0.782,3.194,-2.096],["WIFL","Willow Flycatcher",80,697,28,-0.73,-1.622,0.303,-1.034],["WILL","Willet",9,80,0,-1.858,-3.122,-2.68,0.822],["WIPH","Wilson's Phalarope",18,169,0,-3.187,-3.187,-2.876,-0.31],["WIPL","Wilson's Plover",0,2,0,-4.318,-4.141,-3.962,-0.356],["WISA","Williamson's Sapsucker",73,49,6,0.092,-0.188,-1.266,1.358],["WISN","Wilson's Snipe",125,74,5,-2.762,-2.398,-0.867,-1.895],["WITU","Wild Turkey",65,1500,106,-0.677,0.716,4.973,-5.65],["WIWA","Wilson's Warbler",43,100,3,-3.501,-4.024,-3.374,-0.127],["WODU","Wood Duck",333,923,79,-1.524,-1.14,-0.538,-0.985],["WOSJ","Woodhouse's Scrub-Jay",19,124,33,-1.446,-0.792,0.093,-1.539],["WOST","Wood Stork",12,36,1,-2.075,-3.942,-4.311,2.236],["WOTH","Wood Thrush",249,966,247,3.534,1.387,4.714,-1.18],["WREN","Wrentit",8,77,8,-2.303,-2.389,-1.627,-0.675],["WTDO","White-tipped Dove",0,11,12,-2.583,-2.404,-1.834,-0.748],["WTHA","White-tailed Hawk",2,15,0,1.106,1.905,2.745,-1.639],["WTKI","White-tailed Kite",3,37,1,-11.465,-11.438,-11.955,0.49],["WTSP","White-throated Sparrow",116,28,0,-4.997,-5.187,-5.096,0.099],["WTSW","White-throated Swift",10,81,14,-1.157,-1.209,-2.5,1.344],["WWCR","White-winged Crossbill",12,0,1,-1.039,-1.36,-1.588,0.549],["WWDO","White-winged Dove",6,145,61,2.495,0.692,1.737,0.758],["YBCH","Yellow-breasted Chat",93,955,247,-0.532,-0.754,1.973,-2.505],["YBCU","Yellow-billed Cuckoo",2,1185,503,0.316,-0.15,0.68,-0.365],["YBFL","Yellow-bellied Flycatcher",25,2,0,2.251,1.705,2.653,-0.401],["YBMA","Yellow-billed Magpie",5,14,2,-7.019,-4.781,-4.918,-2.101],["YBSA","Yellow-bellied Sapsucker",204,122,3,0.382,0.053,1.189,-0.808],["YCNH","Yellow-crowned Night-Heron",0,93,74,0.924,1.1,2.564,-1.641],["YERA","Yellow Rail",1,1,0,0.134,-0.906,-0.222,0.356],["YEWA","Yellow Warbler",426,901,97,-0.692,-0.345,0.754,-1.446],["YHBL","Yellow-headed Blackbird",142,219,40,-2.646,-2.448,-1.883,-0.763],["YRWA","Yellow-rumped Warbler",334,143,10,-3.687,-2.451,-3.111,-0.576],["YTVI","Yellow-throated Vireo",110,1024,187,2.394,2.377,2.792,-0.397],["YTWA","Yellow-throated Warbler",79,509,41,4.116,3.113,4.157,-0.042],["ZTHA","Zone-tailed Hawk",1,3,1,-0.175,0.333,1.571,-1.746]]; // [code,name,nC,nS,nE,C,S,E,CmE] from the Student-t model
+const FIX = { S: -0.9713, C: -0.9713 - 0.2069, E: -0.9713 + 0.5545 };
+const NS = "http://www.w3.org/2000/svg";
+const tip = document.getElementById("tip");
+
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - 14;
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+}
+function hideTip() { tip.hidden = true; }
+const fmt = (v, d = 2) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
+
+// Figure 1: fixed effects from the Student-t model
+(function () {
+  const svg = document.getElementById("f1");
+  const rows = [
+    { lab: "Contraction − Stable", t: [-0.2069, 0.0935] },
+    { lab: "Expansion − Stable", t: [0.5545, 0.1111] },
+    { lab: "Contraction − Expansion", t: [-0.7614, 0.1392], key: true }
+  ];
+  const x0 = 24, x1 = 640, lo = -1.4, hi = 1.0;
+  const X = v => x0 + (v - lo) / (hi - lo) * (x1 - x0);
+  const top = 12, rowH = 52, axisY = top + rowH * rows.length + 4;
+  for (let t = -1.2; t <= hi + 1e-9; t += 0.4) {
+    const tt = Math.round(t * 10) / 10;
+    el("line", { x1: X(tt), x2: X(tt), y1: top, y2: axisY, stroke: tt === 0 ? "var(--ink-2)" : "var(--grid)", "stroke-width": 1, "stroke-dasharray": tt === 0 ? "3 3" : null }, svg);
+    el("text", { x: X(tt), y: axisY + 18, "text-anchor": "middle", "font-size": 12 }, svg, tt === 0 ? "0" : fmt(tt, 1));
+  }
+  el("text", { x: X(-0.2), y: axisY + 36, "text-anchor": "middle", "font-size": 12 }, svg, "Difference in trend (%/yr)");
+  function interval(est, se, cy) {
+    const l = est - 1.96 * se, u = est + 1.96 * se;
+    const col = "var(--exp)";
+    el("line", { x1: X(l), x2: X(u), y1: cy, y2: cy, stroke: col, "stroke-width": 2, "stroke-linecap": "round" }, svg);
+    el("line", { x1: X(l), x2: X(l), y1: cy - 5, y2: cy + 5, stroke: col, "stroke-width": 2 }, svg);
+    el("line", { x1: X(u), x2: X(u), y1: cy - 5, y2: cy + 5, stroke: col, "stroke-width": 2 }, svg);
+    el("circle", { cx: X(est), cy, r: 5.5, fill: col, stroke: "var(--paper)", "stroke-width": 2 }, svg);
+    return [l, u];
+  }
+  rows.forEach((r, i) => {
+    const y = top + i * rowH;
+    el("text", { x: x0, y: y + 16, "font-size": 13, style: `fill: var(--ink); font-weight: ${r.key ? 600 : 400}` }, svg, r.lab);
+    const [l, u] = interval(r.t[0], r.t[1], y + 34);
+    // label on the side of the interval facing the chart centre, so it stays inside
+    const right = r.t[0] < 0;
+    el("text", { x: right ? X(u) + 10 : X(l) - 10, y: y + 38.5, "text-anchor": right ? "start" : "end", "font-size": 12.5,
+                 style: "fill: var(--ink); font-variant-numeric: tabular-nums" }, svg, `${fmt(r.t[0])}  (${fmt(l)} to ${fmt(u)})`);
+    const hit = el("rect", { x: x0, y: y, width: x1 - x0, height: rowH - 4, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", ev => showTip(`<b>${r.lab}</b><br>${fmt(r.t[0])} %/yr (95% CI ${fmt(l)} to ${fmt(u)})`, ev));
+    hit.addEventListener("pointerleave", hideTip);
+  });
+})();
+
+// Figure 2: histogram of species C−E
+(function () {
+  const svg = document.getElementById("f3");
+  const v = SP.filter(s => s[2] >= 1 && s[4] >= 1).map(s => s[8]);
+  const w = 0.5, lo = Math.floor(Math.min(...v) / w) * w, hi = Math.ceil(Math.max(...v) / w) * w;
+  const nb = Math.round((hi - lo) / w), counts = new Array(nb).fill(0);
+  v.forEach(x => counts[Math.min(nb - 1, Math.floor((x - lo) / w))]++);
+  const L = 44, R = 664, T = 30, B = 222;
+  const X = x => L + (x - lo) / (hi - lo) * (R - L);
+  const cmax = Math.ceil(Math.max(...counts) / 10) * 10;
+  const Y = c => B - c / cmax * (B - T);
+  for (let t = 0; t <= cmax; t += 10) {
+    el("line", { x1: L, x2: R, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    el("text", { x: L - 8, y: Y(t) + 4, "text-anchor": "end", "font-size": 11.5 }, svg, t);
+  }
+  el("text", { x: 12, y: (T + B) / 2, "text-anchor": "middle", "font-size": 12, transform: `rotate(-90 12 ${(T + B) / 2})` }, svg, "Species");
+  for (let t = Math.ceil(lo / 2) * 2; t <= hi; t += 2)
+    el("text", { x: X(t), y: B + 18, "text-anchor": "middle", "font-size": 11.5 }, svg, t === 0 ? "0" : fmt(t, 0));
+  el("text", { x: (L + R) / 2, y: B + 38, "text-anchor": "middle", "font-size": 12 }, svg, "Species' Contraction − Expansion effect (%/yr)");
+  counts.forEach((c, i) => {
+    const a = lo + i * w, b = a + w;
+    const x = X(a) + 1, bw = X(b) - X(a) - 2;
+    const col = b <= 0 ? "var(--exp)" : "var(--con)";
+    if (c > 0) {
+      const h = Math.max(1, B - Y(c)), r = Math.min(3, bw / 2, h);
+      el("path", { d: `M${x},${B} V${B - h + r} Q${x},${B - h} ${x + r},${B - h} H${x + bw - r} Q${x + bw},${B - h} ${x + bw},${B - h + r} V${B} Z`, fill: col }, svg);
+    }
+    const hit = el("rect", { x: X(a), y: T, width: X(b) - X(a), height: B - T, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", ev => showTip(`<b>${fmt(a, 1)} to ${fmt(b, 1)} %/yr</b><br>${c} species`, ev));
+    hit.addEventListener("pointerleave", hideTip);
+  });
+  el("line", { x1: L, x2: R, y1: B, y2: B, stroke: "var(--ink-2)", "stroke-width": 1 }, svg);
+  el("line", { x1: X(0), x2: X(0), y1: T - 16, y2: B, stroke: "var(--ink-2)", "stroke-width": 1, "stroke-dasharray": "3 3" }, svg);
+  el("text", { x: X(0) + 6, y: T - 6, "font-size": 12 }, svg, "no difference");
+  el("line", { x1: X(-0.761), x2: X(-0.761), y1: T - 16, y2: B, stroke: "var(--ink)", "stroke-width": 2 }, svg);
+  el("text", { x: X(-0.761) - 6, y: T - 6, "text-anchor": "end", "font-size": 12, style: "fill: var(--ink); font-weight: 600" }, svg, "average species −0.76");
+  const neg = v.filter(x => x < 0).length;
+  el("text", { x: L + 8, y: T + 40, "font-size": 12.5, style: "fill: var(--ink)" }, svg, `${neg} of ${v.length} species below zero`);
+  el("text", { x: L + 8, y: T + 58, "font-size": 12.5, style: "fill: var(--ink)" }, svg, `${v.length - neg} above zero`);
+})();
+
+// Figure 3: group forest plot (group model fit_g, Student-t)
+(function () {
+  const svg = document.getElementById("f4");
+  const G = [ // name, species, nC, nE, est, se, BH q
+    ["Eastern forests", 68, 8028, 6284, -1.555, 0.301, "<0.001"],
+    ["Boreal forests", 40, 3853, 299, -1.535, 0.572, "0.027"],
+    ["Grasslands", 38, 2144, 2395, -1.394, 0.460, "0.013"],
+    ["Generalists", 47, 6445, 4272, -0.703, 0.362, "0.12"],
+    ["Western forests", 72, 2962, 1114, -0.635, 0.333, "0.12"],
+    ["Aridlands", 67, 779, 1384, -0.422, 0.369, "0.40"],
+    ["Urban/suburban", 4, 145, 712, 0.066, 1.401, "0.96"],
+    ["Marshlands", 57, 1344, 746, 0.101, 0.425, "0.89"],
+    ["Waterbirds", 29, 3624, 536, 0.572, 0.577, "0.42"],
+    ["Subtropical forests", 24, 115, 277, 0.796, 0.845, "0.42"],
+    ["Coastal", 21, 25, 23, 2.037, 1.461, "0.30"]
+  ];
+  const L = 178, R = 664, T = 26, rowH = 30, B = T + rowH * G.length;
+  const lo = -4, hi = 5;
+  const X = v => L + (v - lo) / (hi - lo) * (R - L);
+  for (let t = lo; t <= hi; t++) {
+    el("line", { x1: X(t), x2: X(t), y1: T - 6, y2: B, stroke: t === 0 ? "var(--ink-2)" : "var(--grid)", "stroke-width": 1, "stroke-dasharray": t === 0 ? "3 3" : null }, svg);
+    el("text", { x: X(t), y: B + 18, "text-anchor": "middle", "font-size": 11.5 }, svg, t === 0 ? "0" : fmt(t, 0));
+  }
+  el("text", { x: (L + R) / 2, y: B + 38, "text-anchor": "middle", "font-size": 12 }, svg, "Contraction − Expansion (%/yr)");
+  el("line", { x1: X(-0.761), x2: X(-0.761), y1: T - 14, y2: B, stroke: "var(--ink)", "stroke-width": 1.5 }, svg);
+  el("text", { x: X(-0.761) - 5, y: T - 6, "text-anchor": "end", "font-size": 11.5, style: "fill: var(--ink); font-weight: 600" }, svg, "all species −0.76");
+  function interval(est, se, cy, hollow) {
+    const l = est - 1.96 * se, u = est + 1.96 * se;
+    const col = u < 0 ? "var(--exp)" : "var(--stable)";
+    const cl = Math.max(lo, l), cu = Math.min(hi, u);
+    el("line", { x1: X(cl), x2: X(cu), y1: cy, y2: cy, stroke: col, "stroke-width": 2, "stroke-linecap": "round" }, svg);
+    if (l >= lo) el("line", { x1: X(l), x2: X(l), y1: cy - 4, y2: cy + 4, stroke: col, "stroke-width": 2 }, svg);
+    if (u <= hi) el("line", { x1: X(u), x2: X(u), y1: cy - 4, y2: cy + 4, stroke: col, "stroke-width": 2 }, svg);
+    el("circle", { cx: X(est), cy, r: 5, fill: hollow ? "var(--paper)" : col, stroke: hollow ? col : "var(--paper)", "stroke-width": 2 }, svg);
+    return [l, u];
+  }
+  G.forEach((g, i) => {
+    const cy = T + i * rowH + rowH / 2;
+    el("text", { x: 8, y: cy + 4.5, "font-size": 13, style: "fill: var(--ink)" }, svg, g[0]);
+    el("text", { x: L - 10, y: cy + 4.5, "text-anchor": "end", "font-size": 11.5 }, svg, `${g[1]} spp.`);
+    const [l, u] = interval(g[4], g[5], cy, false);
+    const hit = el("rect", { x: 0, y: cy - rowH / 2, width: R, height: rowH, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", ev => showTip(`<b>${g[0]}</b><br>${g[1]} species · routes C/E ${g[2].toLocaleString()} / ${g[3].toLocaleString()}<br>C − E ${fmt(g[4])} %/yr (95% CI ${fmt(l)} to ${fmt(u)})<br>BH q ${g[6]}`, ev));
+    hit.addEventListener("pointerleave", hideTip);
+  });
+})();
+</script>
+
+<script>
+// Light / dark switch. Stamps data-theme on <html>, which the palette's
+// :root[data-theme] rules key off; the choice is remembered per browser.
+(function () {
+  const root = document.documentElement;
+  const btn = document.getElementById("theme-toggle");
+  const label = document.getElementById("theme-label");
+  const ico = document.getElementById("theme-ico");
+  const MOON = "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z";
+  const SUN = "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4";
+  const KEY = "sdm-report-theme";
+  const systemDark = () => window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const current = () => root.getAttribute("data-theme") || (systemDark() ? "dark" : "light");
+  function render() {
+    const dark = current() === "dark";
+    label.textContent = dark ? "Light mode" : "Dark mode";
+    ico.setAttribute("d", dark ? SUN : MOON);
+    btn.setAttribute("aria-pressed", String(dark));
+    btn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+  }
+  try { const saved = localStorage.getItem(KEY); if (saved === "dark" || saved === "light") root.setAttribute("data-theme", saved); } catch (e) {}
+  btn.addEventListener("click", () => {
+    const next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+    render();
+  });
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", render);
+  }
+  render();
+})();
+</script>
+
+</body>
+</html>
