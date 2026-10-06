@@ -25,6 +25,8 @@ Run in order:
 
 ```
 0_prepare_aou.R
+  -> 0a_prepare_redlist.R -> 0b_prepare_diet.R -> 0c_prepare_migration.R -> 0d_prepare_invasive.R
+     (species traits; not needed by the model-fitting steps below)
   -> 1c_species_iCAR_covariates.R
        -> 1d_refit_nonconverged_species.R   (optional, only if some fits fail convergence)
   -> 2c_generate_route_trend_csvs_covariates.R
@@ -39,13 +41,26 @@ Every step downstream of 1c is a re-runnable post-processing step (safe to re-ru
 
 Adds AOU numeric species codes to the target species list and checks each species against `bbsBayes2`'s species table.
 
-- Reads: `data/spp_names_codes_group.csv` (and `data/redlist_species_data_20260921/assessments.csv` for the Red List step)
-- Writes: `data/spp_names_codes_group_aou.csv` (adds `spp.num`, `in_bbs`, `bbs_english`, etc. — `in_bbs == TRUE` is the species list every later script filters to), then `data/spp_names_codes_group_aou_taxa.csv` (adds `order`, `family`, `genus`, `species` from `bbsBayes2`), then `data/spp_names_codes_group_aou_taxa_redlist.csv` (adds `redlistScientificName`, `redlistCategory`, `redlistPopulationTrend` from the IUCN Red List assessments, matched on `genus species`, with a manual lookup table in the script for names IUCN spells differently; unmatched species are `NA`)
-- If `data/spp_names_codes_group_aou.csv` already exists, the AOU matching is skipped and the taxa and Red List steps build on it.
+- Reads: `data/spp_names_codes_group.csv`
+- Writes: `data/spp_names_codes_group_aou.csv` (adds `spp.num`, `in_bbs`, `bbs_english`, etc. — `in_bbs == TRUE` is the species list every later script filters to), then `data/spp_names_codes_group_aou_taxa.csv` (adds `order`, `family`, `genus`, `species` from `bbsBayes2`)
+- If `data/spp_names_codes_group_aou.csv` already exists, the AOU matching is skipped and the taxa step builds on it.
 - At the start the script prints any repeated `Code` in `data/spp_names_codes_group.csv` (no check is made for repeated names).
 - Original to this repo — no equivalent in the source project.
 
-**Species listed in two groups.** Seven species appear twice in `data/spp_names_codes_group.csv`, once as `coastal` and once as `waterbirds`: Black Turnstone (BLTU), Little Gull (LIGU), Mew Gull (MEGU), Rock Sandpiper (ROSA), Semipalmated Plover (SEPL), Surf Scoter (SUSC) and Willet (WILL). Their `data/rcp45_coastal/<code>/` and `data/rcp85_coastal/<code>/` SDM raster folders are empty, while the `waterbirds` folders have the rasters, so the `coastal` entry has no SDM data behind it and would only duplicate the species. `0_prepare_aou.R` therefore drops the `coastal` rows for these seven species when building `data/spp_names_codes_group_aou.csv`. The `_taxa` and `_taxa_redlist` files are built from the result, so each species keeps its single `waterbirds` row. `data/spp_names_codes_group.csv` is left unchanged as the original input.
+**Species listed in two groups.** Seven species appear twice in `data/spp_names_codes_group.csv`, once as `coastal` and once as `waterbirds`: Black Turnstone (BLTU), Little Gull (LIGU), Mew Gull (MEGU), Rock Sandpiper (ROSA), Semipalmated Plover (SEPL), Surf Scoter (SUSC) and Willet (WILL). Their `data/rcp45_coastal/<code>/` and `data/rcp85_coastal/<code>/` SDM raster folders are empty, while the `waterbirds` folders have the rasters, so the `coastal` entry has no SDM data behind it and would only duplicate the species. `0_prepare_aou.R` therefore drops the `coastal` rows for these seven species when building `data/spp_names_codes_group_aou.csv`. The `_taxa` file and the trait files below are built from the result, so each species keeps its single `waterbirds` row. `data/spp_names_codes_group.csv` is left unchanged as the original input.
+
+### 0a–0d: species traits
+
+Four short scripts each add one trait to the species list. Each reads the previous script's CSV and writes a new one with the added column(s), so the final file, `data/spp_names_codes_group_aou_taxa_redlist_diet_migration_invasive.csv`, holds all of them. Species are matched to each source by scientific name, then common name, with a small manual lookup in each script for names that differ.
+
+| Script | Adds | Source | Reads | Writes |
+|---|---|---|---|---|
+| `0a_prepare_redlist.R` | `redlistScientificName`, `redlistCategory`, `redlistPopulationTrend` | IUCN Red List assessments download (`data/redlist_species_data_20260921/`) | `..._aou_taxa.csv` | `..._aou_taxa_redlist.csv` |
+| `0b_prepare_diet.R` | `diet` | BIRDBASE v2025.1 Primary Diet (Şekercioğlu et al. 2025); "Invertebrate" split into terrestrial/aquatic with AVONET Trophic.Niche (Tobias et al. 2022), plus a manual table for 21 species AVONET leaves unresolved | `..._redlist.csv` | `..._redlist_diet.csv` |
+| `0c_prepare_migration.R` | `migration` (Migratory / Resident) | Partners in Flight ACAD Global 2024.05.23, `Mig Status` | `..._diet.csv` | `..._diet_migration.csv` |
+| `0d_prepare_invasive.R` | `invasive` (Widespread invasive / Invasive / Established / Not listed) | USGS US-RIIS ver. 2.0, lower-48 list (Simpson et al. 2022, https://doi.org/10.5066/P9KFFTOD) | `..._diet_migration.csv` | `..._diet_migration_invasive.csv` |
+
+Source files live in `data/bird_traits/`. BIRDBASE and AVONET are downloaded automatically on first run; the Red List download, the ACAD table (exported from the [ACAD scores app](https://pif.birdconservancy.org/avian-conservation-assessment-database-scores/)) and US-RIIS have to be downloaded by hand. The diet classification is described in the manuscript's Supplementary Methods.
 
 ### 1_species_iCAR_2010_2025.R
 
@@ -165,6 +180,9 @@ Not part of the pipeline and never run as part of it — scripts that answered a
 ## Data layout
 
 - `data/spp_names_codes_group_aou.csv` — species list with AOU codes and BBS-group membership (from `0_prepare_aou.R`)
+- `data/spp_names_codes_group_aou_taxa_redlist_diet_migration_invasive.csv` — the same list with taxonomy, Red List status, diet, migration and invasive status (from `0a`–`0d`)
+- `data/bird_traits/` — trait source files (BIRDBASE, AVONET, ACAD, US-RIIS); `data/redlist_species_data_20260921/` — IUCN Red List download
+- `data/archive/bird_traits/` — sources used only to check the diet classification (EltonTraits, SAviTraits, DeGraaf et al. 1985, All About Birds labels); not read by any script
 - `data/Anthro.csv` — the anthro covariate, one row per BBS route per year
 - `data/route_info/`, `data/stan_data/` — per-species/tag lightweight route lookup and full model input, written by 1c/1d
 - `data/rcp45_<group>/`, `data/rcp85_<group>/` — SDM classified-change rasters, one folder per bird group

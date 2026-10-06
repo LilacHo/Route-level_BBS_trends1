@@ -1,6 +1,7 @@
 ## =============================================================================
 ## Add AOU numeric codes to species list using wildlifeR, then add bbsBayes2
-## taxonomy (order, family, genus, species)
+## taxonomy (order, family, genus, species). Seven species listed under both
+## "coastal" and "waterbirds" keep only their waterbirds row (see below).
 ## Reads: data/spp_names_codes_group.csv
 ## Outputs: data/spp_names_codes_group_aou.csv       (skipped if it already exists)
 ##          data/spp_names_codes_group_aou_taxa.csv
@@ -46,17 +47,8 @@ drop_coastal_dups <- function(df) {
 
 if (file.exists(aou_csv)) {
   cat("Found", aou_csv, "- skipping AOU matching.\n")
-  spp_df <- read.csv(aou_csv, stringsAsFactors = FALSE)
-  n_before <- nrow(spp_df)
-  spp_df <- drop_coastal_dups(spp_df)
-  if (nrow(spp_df) < n_before) {
-    cat("Dropped", n_before - nrow(spp_df), "coastal duplicate rows from", aou_csv, "\n")
-    tryCatch(
-      write.csv(spp_df, aou_csv, row.names = FALSE),
-      error = function(e) warning(aou_csv, " could not be rewritten (open in another ",
-                                  "program?); it still has the coastal duplicates.")
-    )
-  }
+  spp_df <- read.csv(aou_csv, stringsAsFactors = FALSE) %>%
+    drop_coastal_dups()
 } else {
   library(wildlifeR)
 
@@ -143,85 +135,3 @@ cat("\nSpecies with bbsBayes2 taxonomy:", sum(!is.na(spp_taxa$genus)), "of", nro
 
 write.csv(spp_taxa, taxa_csv, row.names = FALSE)
 cat("Saved:", taxa_csv, "\n")
-
-## Add IUCN Red List status (redlistCategory, redlistPopulationTrend)
-## Match "genus species" to scientificName in the Red List assessments download
-redlist_dir <- "data/redlist_species_data_20260921"
-redlist_csv <- "data/spp_names_codes_group_aou_taxa_redlist.csv"
-
-assessments <- read.csv(file.path(redlist_dir, "assessments.csv"), stringsAsFactors = FALSE) %>%
-  select(scientificName, redlistCategory, redlistPopulationTrend = populationTrend) %>%
-  mutate(redlistScientificName = scientificName) %>%
-  distinct(scientificName, .keep_all = TRUE)
-
-## Manual lookup for species whose bbsBayes2 genus/species is not the name IUCN
-## uses (newer AOS names, splits/lumps, subspecies). genus/species columns are
-## left untouched; only the Red List columns are filled from these names.
-manual_redlist <- tribble(
-  ~Common.Name,                    ~redlist_name,
-  "American Three-toed Woodpecker", "Picoides tridactylus",
-  "American Tree Sparrow",         "Passerella arborea",
-  "Arizona Woodpecker",            "Leuconotopicus arizonae",
-  "Baird's Sparrow",               "Passerculus bairdii",
-  "Black Oystercatcher",           "Haematopus ater",
-  "Black-headed Gull",             "Larus ridibundus",
-  "Black-necked Stilt",            "Himantopus himantopus",
-  "Bonaparte's Gull",              "Larus philadelphia",
-  "Bullock's Oriole",              "Icterus bullockiorum",
-  "Cattle Egret",                  "Bubulcus ibis",
-  "Common Redpoll",                "Acanthis flammea",
-  "Cordilleran Flycatcher",        "Empidonax occidentalis",
-  "Evening Grosbeak",              "Hesperiphona vespertina",
-  "Franklin's Gull",               "Larus pipixcan",
-  "Green Heron",                   "Butorides striata",
-  "Hairy Woodpecker",              "Leuconotopicus villosus",
-  "Henslow's Sparrow",             "Passerculus henslowii",
-  "Hepatic Tanager",               "Piranga hepatica",
-  "Herring Gull",                  "Larus smithsonianus",
-  "Hoary Redpoll",                 "Acanthis flammea",
-  "Laughing Gull",                 "Larus atricilla",
-  "Least Bittern",                 "Ixobrychus exilis",
-  "Mew Gull",                      "Larus canus",
-  "Mountain Plover",               "Charadrius montanus",
-  "Northern Goshawk",              "Accipiter gentilis",
-  "Pacific-slope Flycatcher",      "Empidonax difficilis", 
-  "Pileated Woodpecker",           "Hylatomus pileatus",
-  "Red-cockaded Woodpecker",       "Leuconotopicus borealis",
-  "Red-faced Cormorant",           "Urile urile",
-  "Sandhill Crane",                "Grus canadensis",
-  "Snowy Plover",                  "Charadrius nivosus",
-  "Spotted Dove",                  "Spilopelia chinensis",
-  "White-headed Woodpecker",       "Leuconotopicus albolarvatus",
-  "Wilson's Phalarope",            "Steganopus tricolor",
-  "Wilson's Plover",               "Charadrius wilsonia",
-  "Winter Wren",                   "Troglodytes hiemalis",
-  "Woodhouse's Scrub-Jay",         "Aphelocoma californica",
-  "Yellow-billed Magpie",          "Pica nutalli"
-)
-
-spp_redlist <- spp_taxa %>%
-  mutate(scientificName = ifelse(is.na(genus) | is.na(species), NA_character_,
-                                 paste(genus, species))) %>%
-  left_join(assessments, by = "scientificName") %>%
-  left_join(manual_redlist, by = "Common.Name") %>%
-  left_join(assessments %>% rename(redlistCategory_man = redlistCategory,
-                                   redlistPopulationTrend_man = redlistPopulationTrend,
-                                   redlistScientificName_man = redlistScientificName),
-            by = c("redlist_name" = "scientificName")) %>%
-  mutate(
-    redlistCategory        = coalesce(redlistCategory, redlistCategory_man),
-    redlistPopulationTrend = coalesce(redlistPopulationTrend, redlistPopulationTrend_man),
-    redlistScientificName  = coalesce(redlistScientificName, redlistScientificName_man)
-  ) %>%
-  select(-scientificName, -redlist_name, -redlistCategory_man,
-         -redlistPopulationTrend_man, -redlistScientificName_man) %>%
-  relocate(redlistScientificName, .before = redlistCategory)
-
-no_redlist <- spp_redlist %>% filter(is.na(redlistCategory)) %>% distinct(Common.Name, genus, species)
-cat("\nSpecies matched to Red List assessments:",
-    sum(!is.na(spp_redlist$redlistCategory)), "of", nrow(spp_redlist), "\n")
-cat("Species with no Red List match:\n")
-cat(paste(" -", no_redlist$Common.Name, "(", no_redlist$genus, no_redlist$species, ")"), sep = "\n")
-
-write.csv(spp_redlist, redlist_csv, row.names = FALSE)
-cat("\nSaved:", redlist_csv, "\n")
