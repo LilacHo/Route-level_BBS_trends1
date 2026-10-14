@@ -78,6 +78,22 @@ scenarios  <- c("rcp45", "rcp85")
 
 require_route_converged <- TRUE
 
+# Widespread non-native species excluded before any pooling/Gi* step below --
+# the magnitude hotspot map found Eurasian Collared-Dove alone behind 18 of
+# 37 FDR-robust routes (an active colonization front, not refugia). Pulled
+# from this project's own authoritative trait file (data/spp_names_codes_
+# group_aou_taxa_redlist_diet_migration_invasive.csv's "invasive" column,
+# built by 0d_prepare_invasive.R from the US-RIIS register) rather than a
+# hand-picked guess -- its "Widespread invasive" category is 6 species, not
+# the 5 originally guessed (it includes Monk Parakeet and Mute Swan, and does
+# NOT include House Finch, which isn't in this authoritative list). Set to
+# character(0) to disable and reproduce the original (unfiltered) run.
+exclude_species_codes <- {
+  traits <- read.csv(here::here("data",
+    "spp_names_codes_group_aou_taxa_redlist_diet_migration_invasive.csv"))
+  traits$Code[traits$invasive == "Widespread invasive"]
+}
+
 # A route needs at least this many contraction/expansion-predicted species
 # before its mismatch RATE is included in Part A's Gi* -- otherwise a route
 # with n_category = 1 contributes a meaningless 0%/100% extreme into the
@@ -124,6 +140,14 @@ if (require_route_converged) {
   all_sdm_raw <- all_sdm_raw %>% filter(route_converged == TRUE)
   cat("require_route_converged = TRUE -> dropped", n_before - nrow(all_sdm_raw),
       "of", n_before, "row(s).\n")
+}
+
+if (length(exclude_species_codes) > 0) {
+  n_before <- nrow(all_sdm_raw)
+  excluded_present <- intersect(exclude_species_codes, unique(all_sdm_raw$species_code))
+  all_sdm_raw <- all_sdm_raw %>% filter(!species_code %in% exclude_species_codes)
+  cat("exclude_species_codes -> dropped", n_before - nrow(all_sdm_raw), "of", n_before,
+      "row(s) (", paste(excluded_present, collapse = ", "), ")\n")
 }
 
 if (nrow(all_sdm_raw) == 0) {
@@ -279,7 +303,8 @@ for (model_tag in model_tags) {
       cat("  Routes:", nrow(route_summary),
           "| with >=1 mismatch:", sum(route_summary$n_mismatch > 0), "\n")
 
-      file_prefix <- paste0(run_label, "_", model_tag, "_", scenario, "_", def$key)
+      file_prefix <- paste0(run_label, "_", model_tag, "_", scenario, "_", def$key,
+                           if (length(exclude_species_codes) > 0) "_noinvasive" else "")
       model_scenario_txt <- paste0(model_tag, ", ", toupper(sub("rcp", "RCP ", scenario)))
       subtitle_base <- paste0(def$label, " (", model_scenario_txt, ")")
 
