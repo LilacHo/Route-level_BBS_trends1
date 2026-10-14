@@ -64,9 +64,9 @@ gi_star_at_k <- function(df, value_col, k) {
 }
 
 files <- list.files(in_dir, pattern = "_route_gi\\.csv$", full.names = TRUE)
-# Expansion section is paused in 5b; skip any leftover expansion outputs from
+# Increasing suitability section is paused in 5b; skip any leftover increasing suitability outputs from
 # earlier runs. Delete the next line to include them again.
-files <- files[!grepl("_expansion_", basename(files))]
+files <- files[!grepl("_increasing_suitability_", basename(files))]
 if (length(files) == 0) stop("No *_route_gi.csv found in ", in_dir, " -- run 5b first.")
 
 summary_rows <- list()

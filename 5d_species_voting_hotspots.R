@@ -9,7 +9,7 @@
 # rate/magnitude at dozens of routes at once.
 #
 # This script instead runs Gi* SEPARATELY within each eligible species' own
-# set of contraction-predicted routes, and lets each qualifying species cast
+# set of decreasing-suitability routes, and lets each qualifying species cast
 # AT MOST ONE VOTE, for its single strongest ("least decline") route. A
 # route's final score is how many independent species voted for it. Because
 # no species can cast more than one vote no matter how many routes it has,
@@ -22,7 +22,7 @@
 # Species eligibility (both bounds informed by this project's own data --
 # see the console output of this script's first run for the actual
 # distribution):
-#   - Too FEW contraction-predicted routes and there's not enough spatial
+#   - Too FEW decreasing-suitability routes and there's not enough spatial
 #     information for a species' own Gi* to mean anything (k nearest
 #     neighbors needs a real neighborhood to draw from). min_routes_per_species
 #     enforces this floor.
@@ -34,7 +34,7 @@
 #     is about data quality, both are about not letting a handful of very
 #     common generalists dominate the vote tally. max_routes_per_species
 #     enforces this ceiling. In this project's base/RCP4.5 data, a floor of
-#     20 and ceiling of 150 keeps 163 of 424 contraction-bearing species
+#     20 and ceiling of 150 keeps 163 of 424 decreasing-suitability-bearing species
 #     eligible, excluding the 60 most ubiquitous (Mallard, Song Sparrow,
 #     Canada Goose, ...) and the ~200 with too few routes to test.
 #
@@ -47,7 +47,7 @@
 #
 # A voting species' one vote requires that its own within-species Gi* find
 # an FDR-significant (q < fdr_q) hot route -- a species with no significant
-# local structure in its own contraction range casts no vote at all, rather
+# local structure in its own decreasing suitability range casts no vote at all, rather
 # than being forced to vote for whichever route happens to rank highest.
 #
 # Two scopes, both run here so they can be compared rather than choosing one
@@ -77,7 +77,7 @@
 #
 # Score significance (per-route): a permutation null. For each of n_permutations
 # iterations, every ACTUAL voting species is reassigned a uniformly random
-# route from its own eligible contraction-route set (not just its hot
+# route from its own eligible decreasing-suitability route set (not just its hot
 # routes) instead of its real pick, and the resulting scores are tallied.
 # This asks: if these same species' "best" routes had been randomly located
 # within their own ranges instead of the model's actual estimates, how often
@@ -138,25 +138,25 @@ last_year  <- 2025
 
 # Only let species vote if their own SDM has demonstrably worked: in
 # output/.../per_species_sdm_stats/species_effect_sizes_<model>_<RCP>.csv
-# (the contraction-vs-expansion trend comparison), the species must be
+# (the decreasing vs. increasing suitability trend comparison), the species must be
 # FDR-significant (sig_global_fdr) AND in the SDM-consistent direction
-# (r_rb > 0, i.e. expansion-predicted routes trend higher than contraction-
-# predicted ones -- the sign convention that matches the pooled result).
+# (r_rb > 0, i.e. increasing-suitability routes trend higher than decreasing-suitability
+# ones -- the sign convention that matches the pooled result).
 # Rationale: for a species whose SDM shows no detectable link to observed
 # trends (about 3/4 of species), a route "beating the prediction" is just
 # noise around no relationship, so it says nothing about refugia.
 require_sdm_skill <- FALSE   # disabled -- did not prove useful; see report
 
-# "contraction_only" (the original design): each species' own Gi* runs only
-# on routes the SDM predicts CONTRACTION for -- a hotspot there specifically
+# "decreasing_suitability_only" (the original design): each species' own Gi* runs only
+# on routes the SDM predicts DECREASING SUITABILITY for -- a hotspot there specifically
 # means "defying a decline prediction." "all_routes" runs the identical
 # procedure on EVERY route the species has (any SDM category), regardless of
 # what's predicted there -- a validity check: if the same routes come out on
 # top either way, they may just be generically good/resilient routes for
-# that species, not specifically refugia from a predicted contraction. If
-# different routes come out, that's evidence the contraction restriction is
+# that species, not specifically refugia from a predicted decreasing suitability. If
+# different routes come out, that's evidence the decreasing suitability restriction is
 # doing real, meaningful work rather than just relabeling ordinary variation.
-route_scopes <- c("contraction_only")
+route_scopes <- c("decreasing_suitability_only")
 
 require_route_converged <- TRUE
 
@@ -199,9 +199,9 @@ if (require_route_converged) {
 
 group_category <- function(x) {
   dplyr::case_when(
-    x %in% c(1, 2, 3) ~ "Contraction",
+    x %in% c(1, 2, 3) ~ "Decreasing suitability",
     x == 4            ~ "Stable",
-    x %in% c(5, 6, 7) ~ "Expansion",
+    x %in% c(5, 6, 7) ~ "Increasing suitability",
     TRUE              ~ NA_character_
   )
 }
@@ -264,7 +264,7 @@ cluster_by_distance <- function(lon, lat, cutoff_km) {
 # neighbor scale found elsewhere in this project (40-100 km), with margin.
 cluster_distance_km <- 150
 
-# One species' own Gi* on trend_lci within its own contraction routes, then
+# One species' own Gi* on trend_lci within its own decreasing suitability routes, then
 # turns its FDR-significant hot routes into 0, 1, or several votes depending
 # on voting_rule:
 #   "top1"       -- one vote (weight 1) for its single strongest hot route.
@@ -380,7 +380,7 @@ run_voting <- function(input_df, scope_label, voting_rule, rank_col) {
     arrange(desc(score))
 
   # Permutation null: reassign each ACTUAL voting species' vote(s) to
-  # uniformly random, DISTINCT route(s) from its OWN eligible contraction-
+  # uniformly random, DISTINCT route(s) from its OWN eligible decreasing-suitability
   # route set (not just its hot routes) -- same number of votes and same
   # weights as its real picks, just relocated -- retally, repeat. Tests
   # whether the observed agreement between species is more than random
@@ -536,12 +536,12 @@ for (model_tag in model_tags) {
     } else {
       analysis$n_detect_years <- NA_integer_
     }
-    contraction_df <- analysis %>% filter(category == "Contraction")
+    decreasing_suitability_df <- analysis %>% filter(category == "Decreasing suitability")
 
     summary_rows <- list()
 
     for (route_scope in route_scopes) {
-    working_df <- if (route_scope == "contraction_only") contraction_df else analysis
+    working_df <- if (route_scope == "decreasing_suitability_only") decreasing_suitability_df else analysis
     scopes <- c("all_groups", sort(unique(working_df$group)))
     cat("\n>>> route_scope:", route_scope, "(", nrow(working_df), "species-route rows,",
         n_distinct(working_df$species_code), "species ) <<<\n")

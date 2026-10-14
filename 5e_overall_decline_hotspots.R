@@ -3,26 +3,26 @@
 # A third framing of the refugia question, alongside 5b_refugia_hotspot_stats.R
 # and 5d_species_voting_hotspots.R. Both of those start from a per-ROUTE
 # criterion (is this species credibly increasing at this one route despite a
-# Contraction prediction there?). This script starts from a per-SPECIES
+# Decreasing suitability prediction there?). This script starts from a per-SPECIES
 # criterion instead:
 #
 #   1. Is the species an overall decliner? -- its mean trend across ALL of its
-#      converged routes (every SDM category, not just Contraction -- the same
+#      converged routes (every SDM category, not just Decreasing suitability -- the same
 #      "overall" scope 6a_species_trend_distributions.R's dashed outline
 #      uses), by point estimate only (no credible-interval requirement).
-#   2. Restrict to that species' Contraction-predicted routes only.
+#   2. Restrict to that species' Decreasing-suitability routes only.
 #   3. Unlike 5b/5d, do NOT then filter by the route's own trend sign -- a
 #      route can be increasing or decreasing. Run Getis-Ord Gi* directly on
 #      the route-level mean trend (continuous), among overall-declining
-#      species' Contraction-predicted routes.
+#      species' Decreasing-suitability routes.
 #
 # This Gi* run is two-sided by construction and both directions are
 # meaningful here:
 #   - Hot spots (z > 0): routes where overall-declining species are, on
 #     average, doing LOCALLY BETTER than their neighbors despite being in
-#     predicted-contraction territory -- the refugia candidates.
+#     predicted-decreasing suitability territory -- the refugia candidates.
 #   - Cold spots (z < 0): routes doing locally WORSE -- "compound decline"
-#     zones where real population decline, predicted contraction, and local
+#     zones where real population decline, predicted decreasing suitability, and local
 #     underperformance all stack up.
 #
 # As with 5b, thousands of routes are tested at once, so Benjamini-Hochberg
@@ -64,7 +64,7 @@ exclude_species_codes <- {
 
 # FALSE reproduces the first test of this idea exactly: a species-route's own
 # trend is used as-is (point estimate only), whatever its own credible
-# interval looks like. TRUE restricts the Contraction-predicted rows that
+# interval looks like. TRUE restricts the Decreasing-suitability rows that
 # feed the route-level mean (both the refugia and compound-decline
 # directions) to rows whose OWN 90% credible interval excludes zero
 # (trend_lci > 0 or trend_uci < 0) -- same "credible" convention 5_hotspots.R
@@ -80,7 +80,7 @@ require_credible_route_trend <- FALSE
 # excludes zero (trend_lci > 0 or trend_uci < 0) -- a stricter definition of
 # "overall decliner" that only counts a route's contribution to a species'
 # trend when that route is itself a confident estimate. Independent of
-# require_credible_route_trend above: that one filters which Contraction-
+# require_credible_route_trend above: that one filters which Decreasing suitability-
 # predicted rows feed the route-level Gi* value; this one filters which rows
 # feed the species-level classification step that happens before it. Output
 # gets an "_overallcredible" suffix so this sits alongside the other variants.
@@ -143,13 +143,13 @@ if (nrow(all_sdm_raw) == 0) {
        "', require_route_converged = ", require_route_converged, ").")
 }
 
-# Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7 -- kept in sync with
+# Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7 -- kept in sync with
 # 4c_statistical_analysis_and_visualization_covariates.R / 5b / 5d.
 group_category <- function(x) {
   dplyr::case_when(
-    x %in% c(1, 2, 3) ~ "Contraction",
+    x %in% c(1, 2, 3) ~ "Decreasing suitability",
     x == 4            ~ "Stable",
-    x %in% c(5, 6, 7) ~ "Expansion",
+    x %in% c(5, 6, 7) ~ "Increasing suitability",
     TRUE              ~ NA_character_
   )
 }
@@ -212,7 +212,7 @@ make_gi_map <- function(df, title, subtitle, file_path) {
     scale_color_manual(values = gi_fill_colors, name = "Hotspot\nclass", drop = FALSE) +
     coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
     labs(title = title, subtitle = subtitle,
-         caption = paste0("Red = refugia (locally better despite overall decline + predicted contraction); ",
+         caption = paste0("Red = refugia (locally better despite overall decline + predicted decreasing suitability); ",
                           "blue = compound decline (locally worse). ",
                           "Black ring = still significant after Benjamini-Hochberg FDR correction (q < ", fdr_q, ")"),
          x = NULL, y = NULL) +
@@ -273,10 +273,10 @@ for (model_tag in model_tags) {
 
     cat("\n----- model_tag:", model_tag, "| scenario:", scenario, "-----\n")
 
-    # Contraction-predicted routes for overall-declining species only; the
+    # Decreasing-suitability routes for overall-declining species only; the
     # route's own trend sign is NOT filtered -- it stays continuous.
     con <- analysis %>%
-      filter(category == "Contraction", species_code %in% declining_species$species_code)
+      filter(category == "Decreasing suitability", species_code %in% declining_species$species_code)
 
     if (require_credible_route_trend) {
       n_before <- nrow(con)
@@ -289,7 +289,7 @@ for (model_tag in model_tags) {
       message("  No qualifying rows -- skipping.")
       next
     }
-    cat("  Contraction-predicted rows for overall-declining species:", nrow(con), "\n")
+    cat("  Decreasing-suitability rows for overall-declining species:", nrow(con), "\n")
 
     route_summary <- con %>%
       group_by(route) %>%
@@ -330,7 +330,7 @@ for (model_tag in model_tags) {
     model_scenario_txt <- paste0(model_tag, ", ", toupper(sub("rcp", "RCP ", scenario)))
     make_gi_map(
       gi,
-      paste0("Overall-declining species, Contraction-predicted routes (", model_scenario_txt, ")"),
+      paste0("Overall-declining species, Decreasing-suitability routes (", model_scenario_txt, ")"),
       paste0(nrow(gi), " eligible routes | ", n_refugia, " refugia (FDR) | ", n_decline, " compound decline (FDR)"),
       file.path(plot_dir, paste0(file_prefix, "_gi_map.png"))
     )

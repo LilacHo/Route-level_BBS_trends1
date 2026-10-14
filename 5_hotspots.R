@@ -23,11 +23,11 @@
 # different questions the model already lets us ask separately, which is
 # why both modes are kept available here rather than picking one.
 #
-#   1. contraction_credibly_increasing / contraction_increasing_<X>pct --
-#      SDM predicts CONTRACTION but the route trend is credibly increasing
+#   1. decreasing_suitability_credibly_increasing / decreasing_suitability_increasing_<X>pct --
+#      SDM predicts DECREASING SUITABILITY but the route trend is credibly increasing
 #      (trend_lci > 0) / increasing by at least X%/year (trend >= X).
-#   2. expansion_credibly_decreasing / expansion_decreasing_<X>pct -- the
-#      mirror-image mismatch: SDM predicts EXPANSION but the route trend is
+#   2. increasing_suitability_credibly_decreasing / increasing_suitability_decreasing_<X>pct -- the
+#      mirror-image mismatch: SDM predicts INCREASING SUITABILITY but the route trend is
 #      credibly decreasing (trend_uci < 0) / decreasing by at least X%/year
 #      (trend < -X).
 #
@@ -37,9 +37,9 @@
 # direction) pairs. These are candidate "hotspots": places worth a closer
 # look (lagged response, a covariate the SDM misses, local refugia, etc.).
 #
-# Contraction / Stable / Expansion category boundaries are the SAME grouping
-# 4c_statistical_analysis_and_visualization_covariates.R uses (Contraction =
-# rcp category 1,2,3 | Stable = 4 | Expansion = 5,6,7); keep group_category()
+# Decreasing suitability / Stable / Increasing suitability category boundaries are the SAME grouping
+# 4c_statistical_analysis_and_visualization_covariates.R uses (Decreasing suitability =
+# rcp category 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7); keep group_category()
 # below in sync with that script's copy if the boundaries ever change.
 #
 # Three plots per model_tag x scenario x mismatch-section combination, all
@@ -97,8 +97,8 @@ scenarios  <- c("rcp45", "rcp85")   # loop over both climate scenarios.
 mismatch_mode <- "credible"
 
 # Only used when mismatch_mode == "threshold": %/year. Applied as
-# trend >= +threshold_magnitude (contraction section, "increasing") and
-# trend < -threshold_magnitude (expansion section, "decreasing"). 1.2 is
+# trend >= +threshold_magnitude (decreasing suitability section, "increasing") and
+# trend < -threshold_magnitude (increasing suitability section, "decreasing"). 1.2 is
 # PIF's Watch List "50% cumulative loss since the mid-1960s BBS baseline"
 # criterion, annualized (1 - 0.5^(1/58) ~= 1.2%/year) and mirrored to the
 # increasing direction rather than combining it with a differently-derived
@@ -155,14 +155,14 @@ if (nrow(all_sdm_raw) == 0) {
        "', require_route_converged = ", require_route_converged, ").")
 }
 
-# Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7 | anything else
+# Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7 | anything else
 # (0 = never suitable, or an out-of-legend raster value) -> NA, excluded.
 # Kept in sync with 4c_statistical_analysis_and_visualization_covariates.R.
 group_category <- function(x) {
   dplyr::case_when(
-    x %in% c(1, 2, 3) ~ "Contraction",
+    x %in% c(1, 2, 3) ~ "Decreasing suitability",
     x == 4            ~ "Stable",
-    x %in% c(5, 6, 7) ~ "Expansion",
+    x %in% c(5, 6, 7) ~ "Increasing suitability",
     TRUE              ~ NA_character_
   )
 }
@@ -175,33 +175,33 @@ group_category <- function(x) {
 # the loop below is generic.
 if (mismatch_mode == "credible") {
   mismatch_definitions <- list(
-    list(key = "contraction_credibly_increasing",
-         category = "Contraction",
+    list(key = "decreasing_suitability_credibly_increasing",
+         category = "Decreasing suitability",
          test = function(d) d$trend_lci > 0,
-         label = "Contraction-predicted but credibly increasing",
-         rate_label = "Credibly increasing rate\n(of contraction-\npredicted species)")
-    # Expansion section paused to focus on contraction; restore by adding a
+         label = "Predicted decreasing suitability but credibly increasing",
+         rate_label = "Credibly increasing rate\n(of decreasing-suitability\nspecies)")
+    # Increasing suitability section paused to focus on decreasing suitability; restore by adding a
     # comma after the entry above and uncommenting:
-    # list(key = "expansion_credibly_decreasing",
-    #      category = "Expansion",
+    # list(key = "increasing_suitability_credibly_decreasing",
+    #      category = "Increasing suitability",
     #      test = function(d) d$trend_uci < 0,
-    #      label = "Expansion-predicted but credibly decreasing",
-    #      rate_label = "Credibly decreasing rate\n(of expansion-\npredicted species)")
+    #      label = "Predicted increasing suitability but credibly decreasing",
+    #      rate_label = "Credibly decreasing rate\n(of increasing-suitability\nspecies)")
   )
 } else {
   mismatch_definitions <- list(
-    list(key = paste0("contraction_increasing_", threshold_magnitude, "pct"),
-         category = "Contraction",
+    list(key = paste0("decreasing_suitability_increasing_", threshold_magnitude, "pct"),
+         category = "Decreasing suitability",
          test = function(d) d$trend >= threshold_magnitude,
-         label = paste0("Contraction-predicted but increasing ≥", threshold_magnitude, "%/yr"),
-         rate_label = paste0("≥", threshold_magnitude, "%/yr increasing rate\n(of contraction-\npredicted species)"))
-    # Expansion section paused to focus on contraction; restore by adding a
+         label = paste0("Predicted decreasing suitability but increasing ≥", threshold_magnitude, "%/yr"),
+         rate_label = paste0("≥", threshold_magnitude, "%/yr increasing rate\n(of decreasing-suitability\nspecies)"))
+    # Increasing suitability section paused to focus on decreasing suitability; restore by adding a
     # comma after the entry above and uncommenting:
-    # list(key = paste0("expansion_decreasing_", threshold_magnitude, "pct"),
-    #      category = "Expansion",
+    # list(key = paste0("increasing_suitability_decreasing_", threshold_magnitude, "pct"),
+    #      category = "Increasing suitability",
     #      test = function(d) d$trend < -threshold_magnitude,
-    #      label = paste0("Expansion-predicted but decreasing ≥", threshold_magnitude, "%/yr"),
-    #      rate_label = paste0("≥", threshold_magnitude, "%/yr decreasing rate\n(of expansion-\npredicted species)"))
+    #      label = paste0("Predicted increasing suitability but decreasing ≥", threshold_magnitude, "%/yr"),
+    #      rate_label = paste0("≥", threshold_magnitude, "%/yr decreasing rate\n(of increasing-suitability\nspecies)"))
   )
 }
 

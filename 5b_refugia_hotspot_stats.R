@@ -7,7 +7,7 @@
 # local clusters exist but are being averaged away by eye when looking at a
 # rate map, or by pooling ecologically dissimilar species together. This
 # script asks the same underlying question -- where is climate-suitability
-# CONTRACTION met with a species actually persisting/increasing, i.e.
+# DECREASING SUITABILITY met with a species actually persisting/increasing, i.e.
 # candidate refugia -- three more targeted ways:
 #
 #   PART A -- Getis-Ord Gi* hotspot statistic on route-level mismatch RATE.
@@ -94,7 +94,7 @@ exclude_species_codes <- {
   traits$Code[traits$invasive == "Widespread invasive"]
 }
 
-# A route needs at least this many contraction/expansion-predicted species
+# A route needs at least this many decreasing- or increasing-suitability species
 # before its mismatch RATE is included in Part A's Gi* -- otherwise a route
 # with n_category = 1 contributes a meaningless 0%/100% extreme into the
 # spatial statistic. Same rationale as 5_hotspots.R's min_rows_per_cell, just
@@ -155,29 +155,29 @@ if (nrow(all_sdm_raw) == 0) {
        "', require_route_converged = ", require_route_converged, ").")
 }
 
-# Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7 -- kept in sync with
+# Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7 -- kept in sync with
 # 4c_statistical_analysis_and_visualization_covariates.R / 5_hotspots.R.
 group_category <- function(x) {
   dplyr::case_when(
-    x %in% c(1, 2, 3) ~ "Contraction",
+    x %in% c(1, 2, 3) ~ "Decreasing suitability",
     x == 4            ~ "Stable",
-    x %in% c(5, 6, 7) ~ "Expansion",
+    x %in% c(5, 6, 7) ~ "Increasing suitability",
     TRUE              ~ NA_character_
   )
 }
 
 # "credible" mismatch sections only -- see header comment for why.
 mismatch_definitions <- list(
-  list(key = "contraction_credibly_increasing",
-       category = "Contraction",
+  list(key = "decreasing_suitability_credibly_increasing",
+       category = "Decreasing suitability",
        test = function(d) d$trend_lci > 0,
-       label = "Contraction-predicted but credibly increasing")
-  # Expansion section paused to focus on contraction; restore by adding a
+       label = "Predicted decreasing suitability but credibly increasing")
+  # Increasing suitability section paused to focus on decreasing suitability; restore by adding a
   # comma after the entry above and uncommenting:
-  # list(key = "expansion_credibly_decreasing",
-  #      category = "Expansion",
+  # list(key = "increasing_suitability_credibly_decreasing",
+  #      category = "Increasing suitability",
   #      test = function(d) d$trend_uci < 0,
-  #      label = "Expansion-predicted but credibly decreasing")
+  #      label = "Predicted increasing suitability but credibly decreasing")
 )
 
 # US-states background map (same as 5_hotspots.R).
