@@ -116,20 +116,20 @@ if (length(missing_tags) > 0) {
        "model(s) first.")
 }
 
-# Grouped categories: Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7
+# Grouped categories: Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7
 #   (category 0 = never suitable, excluded) -- no model_tag dependency,
 # defined once here rather than inside the per-tag loop below.
 group_category <- function(x) {
   dplyr::case_when(
-    x %in% c(1, 2, 3) ~ "Contraction",
+    x %in% c(1, 2, 3) ~ "Decreasing suitability",
     x == 4            ~ "Stable",
-    x %in% c(5, 6, 7) ~ "Expansion",
+    x %in% c(5, 6, 7) ~ "Increasing suitability",
     TRUE              ~ NA_character_
   )
 }
 
 cat8_levels <- as.character(0:7)
-grp_levels  <- c("Contraction", "Stable", "Expansion")
+grp_levels  <- c("Decreasing suitability", "Stable", "Increasing suitability")
 
 # Populated once per tag inside the loop below (each tag's fully filtered
 # target_sdm -- bird_group + require_route_converged already applied) --
@@ -253,49 +253,42 @@ compute_cld_layer <- function(df, response, group, group_levels, scenario_label)
            group = factor(group, levels = group_levels))
 }
 
-# Violin plot (RCP 4.5 + 8.5 faceted) with CLD letters on top.
-make_violin_cld <- function(df45, df85, group, group_levels,
+# Violin plot for ONE scenario (RCP 4.5 or RCP 8.5) with CLD letters on top.
+# Was previously one faceted image per species (RCP 4.5 + RCP 8.5 stacked);
+# now each call draws a single scenario so RCP 4.5/8.5 are separate files --
+# callers below now call this twice (once per scenario) instead of once.
+make_violin_cld <- function(df, group, group_levels, scenario_label,
                             title, subtitle, x_lab, file_name,
                             response = "trend",
                             dir = plot_dir) {
-  long45 <- df45 %>%
+  pdata <- df %>%
     filter(!is.na(.data[[group]]), !is.na(.data[[response]])) %>%
     transmute(grp = factor(.data[[group]], levels = group_levels),
-              scenario = "RCP 4.5", value = .data[[response]])
-  long85 <- df85 %>%
-    filter(!is.na(.data[[group]]), !is.na(.data[[response]])) %>%
-    transmute(grp = factor(.data[[group]], levels = group_levels),
-              scenario = "RCP 8.5", value = .data[[response]])
-  pdata <- bind_rows(long45, long85)
+              value = .data[[response]])
   if (nrow(pdata) == 0) return(invisible(NULL))
 
   count_data <- pdata %>%
-    group_by(grp, scenario) %>%
+    group_by(grp) %>%
     summarise(n = n(), .groups = "drop")
 
-  # CLD letters per scenario
-  cld45 <- compute_cld_layer(df45, response, group, group_levels, "RCP 4.5")
-  cld85 <- compute_cld_layer(df85, response, group, group_levels, "RCP 8.5")
-  cld_data <- bind_rows(cld45, cld85)
+  cld_data <- compute_cld_layer(df, response, group, group_levels, scenario_label)
   if (!is.null(cld_data) && nrow(cld_data) > 0) {
     cld_data <- cld_data %>% rename(grp = group)
   }
 
-  p <- ggplot(pdata, aes(x = grp, y = value, fill = scenario)) +
-    geom_violin(trim = FALSE, scale = "width") +
+  fill_col <- if (scenario_label == "RCP 4.5") "#0072B2" else "#D55E00"  # Okabe-Ito blue / vermillion
+
+  p <- ggplot(pdata, aes(x = grp, y = value)) +
+    geom_violin(trim = FALSE, scale = "width", fill = fill_col) +
     geom_boxplot(width = 0.1, outlier.size = 0.3, fill = "white", alpha = 0.6) +
     geom_text(data = count_data, aes(x = grp, y = -Inf, label = n),
               vjust = -0.5, size = 2.5, inherit.aes = FALSE) +
-    facet_wrap(~ scenario, ncol = 1) +
-    scale_fill_manual(values = c("RCP 4.5" = "#0072B2",   # Okabe-Ito blue
-                                 "RCP 8.5" = "#D55E00")) + # Okabe-Ito vermillion
     labs(title = title, subtitle = subtitle,
          x = x_lab, y = "Annual population trend (% per year)") +
     theme_minimal() +
     theme(legend.position = "none",
           plot.title    = element_text(size = 18, face = "bold"),
           plot.subtitle = element_text(size = 13),
-          strip.text    = element_text(size = 14, face = "bold"),
           axis.title.x = element_text(size = 14, face = "bold"),
           axis.title.y = element_text(size = 14, face = "bold"),
           axis.text.x  = element_text(size = 12, face = "bold"),
@@ -309,7 +302,7 @@ make_violin_cld <- function(df45, df85, group, group_levels,
   }
 
   out_f <- file.path(dir, file_name)
-  ggsave(out_f, p, width = 8, height = 8, dpi = 150)
+  ggsave(out_f, p, width = 8, height = 5.5, dpi = 150)
   cat("Saved plot:", basename(out_f), "\n")
   invisible(out_f)
 }
@@ -396,11 +389,11 @@ analysis_85 <- target_sdm %>%
 
 analysis_45_grp <- analysis_45 %>%
   mutate(change_group = factor(group_category(category),
-                               levels = c("Contraction", "Stable", "Expansion")))
+                               levels = c("Decreasing suitability", "Stable", "Increasing suitability")))
 
 analysis_85_grp <- analysis_85 %>%
   mutate(change_group = factor(group_category(category),
-                               levels = c("Contraction", "Stable", "Expansion")))
+                               levels = c("Decreasing suitability", "Stable", "Increasing suitability")))
 
 target_species_list <- unique(target_sdm$species_code)
 
@@ -428,16 +421,20 @@ run_category_tests(analysis_85, "trend", "category", "RCP 8.5", "Trend")
 sink()
 cat("Saved Part 1 (all-species 8-category) statistics to:", stats_file_8cat, "\n")
 
-make_violin_cld(
-  analysis_45, analysis_85,
-  group = "category", group_levels = cat8_levels,
-  title = paste0("All ", run_label, " species combined (", model_tag, ")"),
-  subtitle = paste0(nrow(target_sdm), " route-species observations across ",
-                    length(unique(target_sdm$route)), " unique routes and ",
-                    length(unique(target_sdm$species_code)), " species"),
-  x_lab = "SDM classified change category",
-  file_name = paste0(run_label, "_", model_tag, "_ALL_species_trend_by_rcp_cld.png")
-)
+for (sc in c(rcp45 = "RCP 4.5", rcp85 = "RCP 8.5")) {
+  df_sc <- if (sc == "RCP 4.5") analysis_45 else analysis_85
+  tag_sc <- if (sc == "RCP 4.5") "RCP45" else "RCP85"
+  make_violin_cld(
+    df_sc,
+    group = "category", group_levels = cat8_levels, scenario_label = sc,
+    title = paste0("All ", run_label, " species combined (", model_tag, ")"),
+    subtitle = paste0(nrow(df_sc), " route-species observations across ",
+                      length(unique(target_sdm$route)), " unique routes and ",
+                      length(unique(target_sdm$species_code)), " species (", sc, ")"),
+    x_lab = "SDM classified change category",
+    file_name = paste0(run_label, "_", model_tag, "_ALL_species_trend_by_rcp_", tag_sc, "_cld.png")
+  )
+}
 
 
 # ==========================================================================
@@ -483,21 +480,24 @@ for (sp in target_species_list) {
   sp_45 <- analysis_45 %>% filter(species_code == sp)
   sp_85 <- analysis_85 %>% filter(species_code == sp)
 
-  make_violin_cld(
-    sp_45, sp_85,
-    group = "category", group_levels = cat8_levels,
-    title = paste0(sp_name, " (", sp, ") (group:", sp_grp, ", model:", model_tag, ")"),
-    subtitle = paste0("n = ", nrow(sp_45), " (RCP4.5), ",
-                      nrow(sp_85), " (RCP8.5) route observations"),
-    x_lab = "SDM classified change category",
-    file_name = paste0(run_label, "_", model_tag, "_", sp, "_trend_by_rcp_cld.png"),
-    dir = per_species_dir
-  )
+  for (sc in c(rcp45 = "RCP 4.5", rcp85 = "RCP 8.5")) {
+    sp_sc  <- if (sc == "RCP 4.5") sp_45 else sp_85
+    tag_sc <- if (sc == "RCP 4.5") "RCP45" else "RCP85"
+    make_violin_cld(
+      sp_sc,
+      group = "category", group_levels = cat8_levels, scenario_label = sc,
+      title = paste0(sp_name, " (", sp, ") (group:", sp_grp, ", model:", model_tag, ")"),
+      subtitle = paste0("n = ", nrow(sp_sc), " route observations (", sc, ")"),
+      x_lab = "SDM classified change category",
+      file_name = paste0(run_label, "_", model_tag, "_", sp, "_trend_by_rcp_", tag_sc, "_cld.png"),
+      dir = per_species_dir
+    )
+  }
 }
 
 
 # ==========================================================================
-# PART 3: Grouped categories (Contraction/Stable/Expansion) — all species ####
+# PART 3: Grouped categories (Decreasing suitability/Stable/Increasing suitability) — all species ####
 # ==========================================================================
 
 stats_file_grp <- file.path(stats_dir, paste0(run_label, "_", model_tag, "_category_stats_grouped.txt"))
@@ -505,7 +505,7 @@ sink(stats_file_grp)
 
 cat("\n##################################################\n")
 cat("# PART 3: Grouped categories — all species\n")
-cat("#   Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7\n")
+cat("#   Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7\n")
 cat("#   (category 0 = never suitable, excluded)\n")
 cat("#   Model:", model_tag, "\n")
 cat("#   Response: trend (Trend)\n")
@@ -517,20 +517,24 @@ run_category_tests(analysis_85_grp, "trend", "change_group", "RCP 8.5", "Trend")
 sink()
 cat("Saved Part 3 (all-species grouped) statistics to:", stats_file_grp, "\n")
 
-make_violin_cld(
-  analysis_45_grp, analysis_85_grp,
-  group = "change_group", group_levels = grp_levels,
-  title = paste0("All ", run_label, " species combined (", model_tag, ")"),
-  subtitle = paste0(nrow(target_sdm), " route-species observations across ",
-                    length(unique(target_sdm$route)), " unique routes and ",
-                    length(unique(target_sdm$species_code)), " species"),
-  x_lab = "Range change group",
-  file_name = paste0(run_label, "_", model_tag, "_ALL_species_trend_by_group_cld.png")
-)
+for (sc in c(rcp45 = "RCP 4.5", rcp85 = "RCP 8.5")) {
+  df_sc <- if (sc == "RCP 4.5") analysis_45_grp else analysis_85_grp
+  tag_sc <- if (sc == "RCP 4.5") "RCP45" else "RCP85"
+  make_violin_cld(
+    df_sc,
+    group = "change_group", group_levels = grp_levels, scenario_label = sc,
+    title = paste0("All ", run_label, " species combined (", model_tag, ")"),
+    subtitle = paste0(nrow(df_sc), " route-species observations across ",
+                      length(unique(target_sdm$route)), " unique routes and ",
+                      length(unique(target_sdm$species_code)), " species (", sc, ")"),
+    x_lab = "Range change group",
+    file_name = paste0(run_label, "_", model_tag, "_ALL_species_trend_by_group_", tag_sc, "_cld.png")
+  )
+}
 
 
 # ==========================================================================
-# PART 4: Grouped categories (Contraction/Stable/Expansion) — per species ####
+# PART 4: Grouped categories (Decreasing suitability/Stable/Increasing suitability) — per species ####
 # ==========================================================================
 
 stats_file_species_grp <- file.path(stats_dir,
@@ -539,7 +543,7 @@ sink(stats_file_species_grp)
 
 cat("\n##################################################\n")
 cat("# PART 4: Grouped categories — per species\n")
-cat("#   Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7\n")
+cat("#   Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7\n")
 cat("#   Model:", model_tag, "\n")
 cat("#   Response: trend (Trend)\n")
 cat("##################################################\n")
@@ -573,16 +577,19 @@ for (sp in target_species_list) {
   sp_45 <- analysis_45_grp %>% filter(species_code == sp)
   sp_85 <- analysis_85_grp %>% filter(species_code == sp)
 
-  make_violin_cld(
-    sp_45, sp_85,
-    group = "change_group", group_levels = grp_levels,
-    title = paste0(sp_name, " (", sp, ") (group:", sp_grp, ", model:", model_tag, ")"),
-    subtitle = paste0("n = ", nrow(sp_45), " (RCP4.5), ",
-                      nrow(sp_85), " (RCP8.5) route observations"),
-    x_lab = "Range change group",
-    file_name = paste0(run_label, "_", model_tag, "_", sp, "_trend_by_group_cld.png"),
-    dir = per_species_dir
-  )
+  for (sc in c(rcp45 = "RCP 4.5", rcp85 = "RCP 8.5")) {
+    sp_sc  <- if (sc == "RCP 4.5") sp_45 else sp_85
+    tag_sc <- if (sc == "RCP 4.5") "RCP45" else "RCP85"
+    make_violin_cld(
+      sp_sc,
+      group = "change_group", group_levels = grp_levels, scenario_label = sc,
+      title = paste0(sp_name, " (", sp, ") (group:", sp_grp, ", model:", model_tag, ")"),
+      subtitle = paste0("n = ", nrow(sp_sc), " route observations (", sc, ")"),
+      x_lab = "Range change group",
+      file_name = paste0(run_label, "_", model_tag, "_", sp, "_trend_by_group_", tag_sc, "_cld.png"),
+      dir = per_species_dir
+    )
+  }
 }
 
 }  # end for (model_tag in model_tags) -- Parts 1-4 done for both tags

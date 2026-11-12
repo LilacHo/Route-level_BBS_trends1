@@ -2,14 +2,14 @@
 #
 # Companion to 4d_habitat_category_trends.R. Where 4d compares mean/weighted
 # trend BY category, this script classifies each SPECIES by the STRUCTURE of
-# its Contraction/Stable/Expansion compact letter display (CLD) -- i.e. which
+# its Decreasing suitability/Stable/Increasing suitability compact letter display (CLD) -- i.e. which
 # of the three categories are/aren't statistically distinguishable from one
 # another for that species -- since the letters themselves aren't ordinal
 # (see the project record: letter identity is assigned per-species by the
 # underlying pairwise test, not by a fixed rank/direction, so "a" doesn't
-# mean "highest" or "Contraction" consistently across species).
+# mean "highest" or "Decreasing suitability" consistently across species).
 #
-# Each species' (Contraction.sig, Stable.sig, Expansion.sig) triple is
+# Each species' (Decreasing.suitability.sig, Stable.sig, Increasing.suitability.sig) triple is
 # classified into one of 11 structure classes by counting, for each pair of
 # categories, whether their letter SETS overlap (share >=1 letter, i.e. NOT
 # significantly different) -- generalized via set overlap rather than exact
@@ -19,18 +19,18 @@
 #   0 NA, 3 pairwise overlaps (all mutually non-different)      -> No difference
 #   0 NA, 0 pairwise overlaps (all three mutually different)    -> All three differ
 #   0 NA, 1 pairwise overlap  (two tied, third differs)         -> C~S!=E / S~E!=C / C~E!=S
-#   0 NA, 2 pairwise overlaps (one category "bridges" the other -> Bridging-Contraction /
-#                              two, which are themselves distinct)  Bridging-Stable / Bridging-Expansion
+#   0 NA, 2 pairwise overlaps (one category "bridges" the other -> Bridging-Decreasing suitability /
+#                              two, which are themselves distinct)  Bridging-Stable / Bridging-Increasing suitability
 #   1 NA, remaining pair overlaps                                -> No difference
 #   1 NA, remaining pair doesn't overlap                         -> Partial: <the differing pair>
 #   >=2 NA                                                       -> Insufficient data
 #
-# C~E!=S ("Contraction and Expansion are themselves statistically
+# C~E!=S ("Decreasing suitability and Increasing suitability are themselves statistically
 # indistinguishable, Stable is the odd one out") is flagged as
 # hypothesis-relevant in the opposite direction from the others: it says the
 # two categories the project's hypothesis contrasts aren't detectably
 # different for that species. Bridging-Stable (a,ab,b-type) is the only
-# bridging class that resolves a direct Contraction-vs-Expansion difference;
+# bridging class that resolves a direct Decreasing vs. Increasing suitability difference;
 # the other two bridging classes resolve a different pair and are weaker
 # evidence for this project's specific hypothesis. See the project record
 # for the full reasoning and worked examples behind this scheme.
@@ -83,7 +83,11 @@ read_one_workbook <- function(path, model_tag) {
 }
 
 all_raw <- map2_dfr(in_files, names(in_files), read_one_workbook)
-names(all_raw) <- make.names(names(all_raw))  # "Contraction sig" -> "Contraction.sig" etc.
+# The input workbooks still carry the old "Contraction"/"Expansion" header
+# names -- relabel them to the "Decreasing/Increasing suitability" terms.
+names(all_raw) <- sub("^Expansion ", "Increasing suitability ",
+                      sub("^Contraction ", "Decreasing suitability ", names(all_raw)))
+names(all_raw) <- make.names(names(all_raw))  # "Decreasing suitability sig" -> "Decreasing.suitability.sig" etc.
 
 # Bird group lookup, de-duplicated the same way every other script in this
 # project resolves species dual-listed under two groups (keep the
@@ -94,10 +98,10 @@ spp_group <- read.csv(group_lookup_csv, stringsAsFactors = FALSE) %>%
 
 sig_long <- all_raw %>%
   select(Species, model, scenario,
-         Contraction.sig, Stable.sig, Expansion.sig) %>%
+         Decreasing.suitability.sig, Stable.sig, Increasing.suitability.sig) %>%
   left_join(spp_group, by = "Species")
 
-#' Classify one species' (Contraction, Stable, Expansion) CLD letters into
+#' Classify one species' (Decreasing suitability, Stable, Increasing suitability) CLD letters into
 #' one of the 11 structure classes described in this script's header.
 #'
 #' @param c,s,e single-character-or-compound CLD letter strings (e.g. "a",
@@ -114,10 +118,10 @@ classify_structure <- function(c, s, e) {
   if (n_na >= 2) return("Insufficient data")
 
   if (n_na == 1) {
-    if (is.na(c)) return(if (shares(s, e)) "No difference" else "Partial: Stable!=Expansion")
-    if (is.na(e)) return(if (shares(c, s)) "No difference" else "Partial: Contraction!=Stable")
+    if (is.na(c)) return(if (shares(s, e)) "No difference" else "Partial: Stable!=Increasing suitability")
+    if (is.na(e)) return(if (shares(c, s)) "No difference" else "Partial: Decreasing suitability!=Stable")
     # is.na(s) -- not observed in current data, handled for completeness
-    return(if (shares(c, e)) "No difference" else "Partial: Contraction!=Expansion")
+    return(if (shares(c, e)) "No difference" else "Partial: Decreasing suitability!=Increasing suitability")
   }
 
   # All three present.
@@ -135,13 +139,13 @@ classify_structure <- function(c, s, e) {
   # themselves distinct. The "hub" is whichever category is in BOTH
   # overlapping pairs.
   if (cs && se) return("Bridging-Stable")        # Stable overlaps both C and E
-  if (cs && ce) return("Bridging-Contraction")   # Contraction overlaps both S and E
-  return("Bridging-Expansion")                   # Expansion overlaps both C and S
+  if (cs && ce) return("Bridging-Decreasing suitability")   # Decreasing suitability overlaps both S and E
+  return("Bridging-Increasing suitability")                   # Increasing suitability overlaps both C and S
 }
 
 sig_long <- sig_long %>%
   rowwise() %>%
-  mutate(structure_class = classify_structure(Contraction.sig, Stable.sig, Expansion.sig)) %>%
+  mutate(structure_class = classify_structure(Decreasing.suitability.sig, Stable.sig, Increasing.suitability.sig)) %>%
   ungroup()
 
 n_unmatched <- sig_long %>% filter(is.na(Group)) %>% distinct(Species) %>% nrow()
@@ -151,9 +155,9 @@ if (n_unmatched > 0) {
 }
 
 class_levels <- c("No difference", "All three differ", "C~S!=E", "S~E!=C", "C~E!=S",
-                  "Bridging-Expansion", "Bridging-Contraction", "Bridging-Stable",
-                  "Partial: Contraction!=Stable", "Partial: Stable!=Expansion",
-                  "Partial: Contraction!=Expansion", "Insufficient data")
+                  "Bridging-Increasing suitability", "Bridging-Decreasing suitability", "Bridging-Stable",
+                  "Partial: Decreasing suitability!=Stable", "Partial: Stable!=Increasing suitability",
+                  "Partial: Decreasing suitability!=Increasing suitability", "Insufficient data")
 sig_long <- sig_long %>%
   mutate(structure_class = factor(structure_class, levels = class_levels))
 

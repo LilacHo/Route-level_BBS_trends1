@@ -2,7 +2,7 @@
 #
 # One map per species x model (base / anthro) x climate scenario (RCP 4.5 /
 # RCP 8.5) showing, on a single panel:
-#   - the SDM range shift (filled area): Contraction / Stable / Expansion,
+#   - the SDM range shift (filled area): Decreasing suitability / Stable / Increasing suitability,
 #     from the 2025 classified-change raster (Bateman et al. 2020), and
 #   - each BBS route's population trend (points): colour = Decrease /
 #     Increase / Not significant, size = |annual % change|.
@@ -14,11 +14,11 @@
 # same way with no per-species code.
 #
 # Range-shift classes (raster values -> map category):
-#   1-3 (extirpation, worsening, slightly worsening) -> Contraction
+#   1-3 (extirpation, worsening, slightly worsening) -> Decreasing suitability
 #   4   (neutral)                                    -> Stable
-#   5-7 (slightly improving, improving, colonization)-> Expansion
+#   5-7 (slightly improving, improving, colonization)-> Increasing suitability
 #   0   (never suitable)                             -> not drawn
-# This is the same Contraction / Stable / Expansion grouping 4c uses in its
+# This is the same Decreasing suitability / Stable / Increasing suitability grouping 4c uses in its
 # PART 3-4.
 #
 # Trend class (per route, from the 90% credible interval 2c writes as
@@ -91,10 +91,10 @@ sdm_dir <- here::here("output", "species_routes_covariates", "per_species_sdm")
 out_dir <- here::here("output", "species_maps")
 
 # Colours (range shift as in the Blue Jay reference map) --------------------
-shift_cols <- c("Contraction" = "#FF7F00", "Stable" = "#FFFF99", "Expansion" = "#19B2FF")
+shift_cols <- c("Decreasing suitability" = "#FF7F00", "Stable" = "#FFFF99", "Increasing suitability" = "#19B2FF")
 trend_cols <- c("Decrease" = "#E51932", "Increase" = "#654CFF", "Not significant" = "#8FD3C0")
 
-# Raster value -> range-shift class (1 = Contraction, 2 = Stable, 3 = Expansion);
+# Raster value -> range-shift class (1 = Decreasing suitability, 2 = Stable, 3 = Increasing suitability);
 # unlisted values (0 = never suitable) become NA and are not drawn.
 shift_rcl <- cbind(is = 1:7, becomes = c(1, 1, 1, 2, 3, 3, 3))
 shift_labels <- names(shift_cols)

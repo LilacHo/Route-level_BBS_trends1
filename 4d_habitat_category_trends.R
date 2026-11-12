@@ -2,7 +2,7 @@
 #
 # Tests the core hypothesis this project is built around: route-level BBS
 # population trend should be INCREASING in areas the SDM classifies as
-# habitat EXPANSION and DECREASING in areas classified as CONTRACTION
+# habitat INCREASING SUITABILITY and DECREASING in areas classified as DECREASING SUITABILITY
 # (Stable falling in between). Answers two questions:
 #
 #   1. Does the trend follow that pattern -- overall, and separately within
@@ -19,8 +19,8 @@
 #                         swing that species' "mean" by +/-15%/yr), which
 #                         then counts exactly as much as a 300-route species.
 #   - weighted_mean    -- each species' mean trend weighted by how many
-#                         routes it was estimated from (Contraction/Stable/
-#                         Expansion n). Approximates the average trend per
+#                         routes it was estimated from (Decreasing suitability/Stable/
+#                         Increasing suitability n). Approximates the average trend per
 #                         ROUTE rather than per species, and is far more
 #                         stable to the inclusion/exclusion of low-n species
 #                         (checked directly: filtering to n > 0/3/5/10 barely
@@ -36,7 +36,7 @@
 # Reads:  output/files/all_species_habitat_contraction_stable_expansion_2010_2025_base.xlsx
 #         output/files/all_species_habitat_contraction_stable_expansion_2010_2025_anthro.xlsx
 #         Each workbook has one sheet per scenario (RCP4.5, RCP8.5) and one
-#         row per species: Contraction/Stable/Expansion n (route count),
+#         row per species: Decreasing suitability/Stable/Increasing suitability n (route count),
 #         mean, sd, and sig (a compact-letter-display code from a per-species
 #         pairwise test across the three categories -- shared letters =
 #         not significantly different). These are NOT produced by any
@@ -52,24 +52,24 @@
 #         script's output instead.
 #         data/spp_names_codes_group_aou.csv -- species -> bird Group.
 #
-# A fourth pseudo-category, "Overall", is added alongside Contraction/
-# Stable/Expansion: each species' own overall mean trend across ALL its
+# A fourth pseudo-category, "Overall", is added alongside Decreasing suitability/
+# Stable/Increasing suitability: each species' own overall mean trend across ALL its
 # categorized routes, recovered by taking a route-count-weighted average of
 # that species' (up to three) category means -- since the categories are a
 # non-overlapping partition of a species' routes, this exactly reconstructs
 # the grand per-species mean (no need to go back to the route-level data).
 # Averaging that Overall value across species the same way as the other
 # three categories (unweighted / route-count-weighted) gives each group a
-# baseline trend to compare its Contraction/Stable/Expansion values against.
+# baseline trend to compare its Decreasing suitability/Stable/Increasing suitability values against.
 #
 # Writes: output/files/habitat_category_group_trend_summary_2010_2025.csv
 #         Long format: one row per model x scenario x Group (plus a pooled
-#         "All species" row) x category (Contraction/Stable/Expansion/
+#         "All species" row) x category (Decreasing suitability/Stable/Increasing suitability/
 #         Overall): n_species, total_routes, unweighted_mean, weighted_mean.
 #         output/files/habitat_category_group_trend_comparison_2010_2025.csv
 #         Wide format (one row per model x scenario x Group): the four
 #         category means side by side under both averaging schemes, plus
-#         whether Expansion > Contraction under each -- this is the table
+#         whether Increasing suitability > Decreasing suitability under each -- this is the table
 #         printed to console below, saved so it doesn't need retyping.
 
 library(here)
@@ -105,7 +105,11 @@ read_one_workbook <- function(path, model_tag) {
 }
 
 all_raw <- map2_dfr(in_files, names(in_files), read_one_workbook)
-names(all_raw) <- make.names(names(all_raw))  # "Contraction n" -> "Contraction.n" etc.
+# The input workbooks still carry the old "Contraction"/"Expansion" header
+# names -- relabel them to the "Decreasing/Increasing suitability" terms.
+names(all_raw) <- sub("^Expansion ", "Increasing suitability ",
+                      sub("^Contraction ", "Decreasing suitability ", names(all_raw)))
+names(all_raw) <- make.names(names(all_raw))  # "Decreasing suitability n" -> "Decreasing.suitability.n" etc.
 
 # Bird group lookup, de-duplicated the same way every other script in this
 # project resolves species that are dual-listed under two groups (e.g.
@@ -117,9 +121,9 @@ spp_group <- read.csv(group_lookup_csv, stringsAsFactors = FALSE) %>%
 
 long <- all_raw %>%
   select(Species, model, scenario,
-         Contraction_n = Contraction.n, Contraction_mean = Contraction.mean,
+         Decreasing_suitability_n = Decreasing.suitability.n, Decreasing_suitability_mean = Decreasing.suitability.mean,
          Stable_n = Stable.n, Stable_mean = Stable.mean,
-         Expansion_n = Expansion.n, Expansion_mean = Expansion.mean) %>%
+         Increasing_suitability_n = Increasing.suitability.n, Increasing_suitability_mean = Increasing.suitability.mean) %>%
   left_join(spp_group, by = "Species")
 
 n_unmatched <- long %>% filter(is.na(Group)) %>% distinct(Species) %>% nrow()
@@ -131,14 +135,14 @@ if (n_unmatched > 0) {
 # Each species' own overall mean trend across every categorized route, and
 # the route count backing it -- a route-count-weighted average of that
 # species' (up to 3) category means exactly recovers the grand per-species
-# mean, since Contraction/Stable/Expansion routes are non-overlapping.
+# mean, since Decreasing suitability/Stable/Increasing suitability routes are non-overlapping.
 long <- long %>%
   rowwise() %>%
   mutate(
-    Overall_n = sum(c(Contraction_n, Stable_n, Expansion_n), na.rm = TRUE),
+    Overall_n = sum(c(Decreasing_suitability_n, Stable_n, Increasing_suitability_n), na.rm = TRUE),
     Overall_mean = {
-      n_vec <- c(Contraction_n, Stable_n, Expansion_n)
-      m_vec <- c(Contraction_mean, Stable_mean, Expansion_mean)
+      n_vec <- c(Decreasing_suitability_n, Stable_n, Increasing_suitability_n)
+      m_vec <- c(Decreasing_suitability_mean, Stable_mean, Increasing_suitability_mean)
       keep  <- !is.na(n_vec) & !is.na(m_vec) & n_vec > 0
       if (any(keep)) sum(m_vec[keep] * n_vec[keep]) / sum(n_vec[keep]) else NA_real_
     }
@@ -147,15 +151,15 @@ long <- long %>%
 
 # Reshape to one row per model x scenario x species x category ---------------
 long_cat <- long %>%
-  pivot_longer(cols = c(Contraction_mean, Stable_mean, Expansion_mean, Overall_mean),
+  pivot_longer(cols = c(Decreasing_suitability_mean, Stable_mean, Increasing_suitability_mean, Overall_mean),
                names_to = "category", values_to = "trend_mean") %>%
-  mutate(category = sub("_mean$", "", category),
-         n_col = case_when(category == "Contraction" ~ Contraction_n,
+  mutate(category = sub("_", " ", sub("_mean$", "", category)),  # "Decreasing_suitability" -> "Decreasing suitability"
+         n_col = case_when(category == "Decreasing suitability" ~ Decreasing_suitability_n,
                            category == "Stable"      ~ Stable_n,
-                           category == "Expansion"   ~ Expansion_n,
+                           category == "Increasing suitability"   ~ Increasing_suitability_n,
                            category == "Overall"     ~ Overall_n)) %>%
   filter(!is.na(trend_mean)) %>%
-  mutate(category = factor(category, levels = c("Contraction", "Stable", "Expansion", "Overall")))
+  mutate(category = factor(category, levels = c("Decreasing suitability", "Stable", "Increasing suitability", "Overall")))
 
 summarise_trends <- function(df) {
   df %>%
@@ -183,17 +187,17 @@ if (!dir.exists(dirname(out_csv))) dir.create(dirname(out_csv), recursive = TRUE
 write.csv(category_summary, out_csv, row.names = FALSE)
 cat("Wrote:", out_csv, "\n")
 
-# Wide comparison table: does Expansion trend beat Contraction trend, per
+# Wide comparison table: does Increasing suitability trend beat Decreasing suitability trend, per
 # model x scenario x Group ("All species" included as its own row), with
 # each group's Overall (unw./wtd.) trend alongside as a baseline? -----------
 wide_comparison <- category_summary %>%
   pivot_wider(names_from = category,
               values_from = c(n_species, total_routes, unweighted_mean, weighted_mean),
-              names_glue = "{category}_{.value}") %>%
+              names_glue = "{gsub(' ', '_', category)}_{.value}") %>%
   mutate(
     n_species_total = Overall_n_species,
-    unweighted_follows_hypothesis = Expansion_unweighted_mean > Contraction_unweighted_mean,
-    weighted_follows_hypothesis   = Expansion_weighted_mean   > Contraction_weighted_mean
+    unweighted_follows_hypothesis = Increasing_suitability_unweighted_mean > Decreasing_suitability_unweighted_mean,
+    weighted_follows_hypothesis   = Increasing_suitability_weighted_mean   > Decreasing_suitability_weighted_mean
   ) %>%
   arrange(model, scenario, desc(Group == "All species"), desc(n_species_total))
 
@@ -202,14 +206,14 @@ wide_comparison <- category_summary %>%
 # console table above doesn't have to be re-typed by hand to share/reuse it.
 wide_comparison_out <- wide_comparison %>%
   select(model, scenario, Group, n_species = n_species_total,
-         `Contraction (unw.)` = Contraction_unweighted_mean,
+         `Decreasing suitability (unw.)` = Decreasing_suitability_unweighted_mean,
          `Stable (unw.)`      = Stable_unweighted_mean,
-         `Expansion (unw.)`   = Expansion_unweighted_mean,
+         `Increasing suitability (unw.)`   = Increasing_suitability_unweighted_mean,
          `Overall (unw.)`     = Overall_unweighted_mean,
          `Hyp. holds? (unw.)` = unweighted_follows_hypothesis,
-         `Contraction (wtd.)` = Contraction_weighted_mean,
+         `Decreasing suitability (wtd.)` = Decreasing_suitability_weighted_mean,
          `Stable (wtd.)`      = Stable_weighted_mean,
-         `Expansion (wtd.)`   = Expansion_weighted_mean,
+         `Increasing suitability (wtd.)`   = Increasing_suitability_weighted_mean,
          `Overall (wtd.)`     = Overall_weighted_mean,
          `Hyp. holds? (wtd.)` = weighted_follows_hypothesis)
 
@@ -224,9 +228,9 @@ for (m in unique(wide_comparison$model)) {
       wide_comparison %>%
         filter(model == m, scenario == sc) %>%
         select(Group, n_species_total,
-               Contraction_unweighted_mean, Stable_unweighted_mean, Expansion_unweighted_mean,
+               Decreasing_suitability_unweighted_mean, Stable_unweighted_mean, Increasing_suitability_unweighted_mean,
                Overall_unweighted_mean, unweighted_follows_hypothesis,
-               Contraction_weighted_mean, Stable_weighted_mean, Expansion_weighted_mean,
+               Decreasing_suitability_weighted_mean, Stable_weighted_mean, Increasing_suitability_weighted_mean,
                Overall_weighted_mean, weighted_follows_hypothesis)
     ), digits = 3, row.names = FALSE)
   }

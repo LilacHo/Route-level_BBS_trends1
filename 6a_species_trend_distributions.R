@@ -2,11 +2,11 @@
 #
 # One "raincloud" figure per species x model (base / anthro) x climate
 # scenario (RCP 4.5 / RCP 8.5): for every route belonging to that species,
-# pulls its population trend and its SDM range-shift category (Contraction /
-# Stable / Expansion, from the same classified-change raster values 3d's
+# pulls its population trend and its SDM range-shift category (Decreasing suitability /
+# Stable / Increasing suitability, from the same classified-change raster values 3d's
 # maps use), then shows:
-#   - a density curve of route trend PER category (Contraction / Stable /
-#     Expansion), filled with the same area colors as
+#   - a density curve of route trend PER category (Decreasing suitability / Stable /
+#     Increasing suitability), filled with the same area colors as
 #     3d_visualization_map.R's range-shift maps, so this figure and that map
 #     read as one system;
 #   - a dashed grey OUTLINE-ONLY density behind all three, for every
@@ -23,7 +23,7 @@
 #
 # Companion to 3d_visualization_map.R (same category colors, same route
 # trend/credible-interval source) and 4c_statistical_analysis_and_visualization_covariates.R
-# (same Contraction/Stable/Expansion grouping and per-species scope) -- this
+# (same Decreasing suitability/Stable/Increasing suitability grouping and per-species scope) -- this
 # figure is the "pull every route's trend out of the map and look at its
 # distribution" complement to 3d's spatial view.
 #
@@ -62,7 +62,7 @@ overwrite <- FALSE
 require_route_converged <- TRUE
 
 # Skip a species/model/scenario combo with fewer than this many categorized
-# (Contraction/Stable/Expansion) routes -- not enough data for a meaningful
+# (Decreasing suitability/Stable/Increasing suitability) routes -- not enough data for a meaningful
 # density curve.
 min_routes_per_plot <- 5
 
@@ -80,17 +80,17 @@ out_dir <- here::here("output", "species_trend_distributions")
 # fill (#FFFF99) is a near-invisible pale yellow as a line/point/text color
 # on a white background, so it needs a distinctly darker gold rather than a
 # generic darkening formula.
-shift_cols        <- c(Contraction = "#FF7F00", Stable = "#FFFF99", Expansion = "#19B2FF")
-shift_border_cols <- c(Contraction = "#B35900", Stable = "#999900", Expansion = "#0F6E9C")
-cat_levels <- c("Contraction", "Stable", "Expansion")
+shift_cols        <- c(`Decreasing suitability` = "#FF7F00", Stable = "#FFFF99", `Increasing suitability` = "#19B2FF")
+shift_border_cols <- c(`Decreasing suitability` = "#B35900", Stable = "#999900", `Increasing suitability` = "#0F6E9C")
+cat_levels <- c("Decreasing suitability", "Stable", "Increasing suitability")
 
 # Raster value -> range-shift class, same grouping as 3d/4c:
-# Contraction = 1,2,3 | Stable = 4 | Expansion = 5,6,7 (0 = never suitable, excluded).
+# Decreasing suitability = 1,2,3 | Stable = 4 | Increasing suitability = 5,6,7 (0 = never suitable, excluded).
 group_category <- function(x) {
   dplyr::case_when(
-    x %in% c(1, 2, 3) ~ "Contraction",
+    x %in% c(1, 2, 3) ~ "Decreasing suitability",
     x == 4            ~ "Stable",
-    x %in% c(5, 6, 7) ~ "Expansion",
+    x %in% c(5, 6, 7) ~ "Increasing suitability",
     TRUE              ~ NA_character_
   )
 }
@@ -139,7 +139,7 @@ cat("Species to plot:", length(species_slugs), "| models:", paste(models, collap
 
 # Plot builder -----------------------------------------------------------------
 # df must already have one row per route with: trend, credible, category
-# (Contraction/Stable/Expansion factor, NA rows already dropped).
+# (Decreasing suitability/Stable/Increasing suitability factor, NA rows already dropped).
 plot_species_distribution <- function(df, sp_name, model, scenario_label) {
   dens_all <- safe_density(df$trend)
 
@@ -175,9 +175,9 @@ plot_species_distribution <- function(df, sp_name, model, scenario_label) {
 
   p <- ggplot()
 
-  # Category densities (Stable, then Contraction, then Expansion so the
+  # Category densities (Stable, then Decreasing suitability, then Increasing suitability so the
   # narrower/more-saturated colors sit on top of the broader Stable fill).
-  for (lv in intersect(c("Stable", "Contraction", "Expansion"), present)) {
+  for (lv in intersect(c("Stable", "Decreasing suitability", "Increasing suitability"), present)) {
     if (!is.null(cat_dens[[lv]])) {
       p <- p + geom_density(data = cat_dfs[[lv]], aes(x = trend), inherit.aes = FALSE,
                             fill = shift_cols[[lv]], color = shift_border_cols[[lv]],
@@ -244,10 +244,10 @@ plot_species_distribution <- function(df, sp_name, model, scenario_label) {
 
 # Main loop --------------------------------------------------------------------
 manifest <- list()
-add_manifest <- function(slug, model, scenario, n_routes, n_contraction, n_stable, n_expansion, status) {
+add_manifest <- function(slug, model, scenario, n_routes, n_decreasing_suitability, n_stable, n_increasing_suitability, status) {
   manifest[[length(manifest) + 1]] <<- data.frame(
     species = slug, model = model, scenario = scenario, n_routes = n_routes,
-    n_contraction = n_contraction, n_stable = n_stable, n_expansion = n_expansion, status = status
+    n_decreasing_suitability = n_decreasing_suitability, n_stable = n_stable, n_increasing_suitability = n_increasing_suitability, status = status
   )
 }
 
@@ -277,8 +277,8 @@ for (sp in species_slugs) {
     n_counts <- table(factor(df$category, levels = cat_levels))
 
     if (nrow(df) < min_routes_per_plot) {
-      add_manifest(sp, m, sc, nrow(df), n_counts[["Contraction"]], n_counts[["Stable"]],
-                  n_counts[["Expansion"]], "too_few_routes")
+      add_manifest(sp, m, sc, nrow(df), n_counts[["Decreasing suitability"]], n_counts[["Stable"]],
+                  n_counts[["Increasing suitability"]], "too_few_routes")
       next
     }
 
@@ -292,8 +292,8 @@ for (sp in species_slugs) {
       message("WARNING: ", sp, " ", m, " ", sc, " -- plot failed: ", conditionMessage(e))
       "error"
     })
-    add_manifest(sp, m, sc, nrow(df), n_counts[["Contraction"]], n_counts[["Stable"]],
-                n_counts[["Expansion"]], status)
+    add_manifest(sp, m, sc, nrow(df), n_counts[["Decreasing suitability"]], n_counts[["Stable"]],
+                n_counts[["Increasing suitability"]], status)
     if (status == "ok") cat("  Wrote:", basename(out_file), "\n")
   }
 }
