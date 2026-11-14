@@ -11,6 +11,7 @@
 ##   Fruit, Nectar, Seed, Vertebrate (land vertebrates), Fish, Scavenger,
 ##   Plant); otherwise Carnivore (mixed animal food), Herbivore (mixed plant
 ##   food) or Omnivore (animal and plant food).
+##   Scavenger is merged into Carnivore (too few species to stand alone).
 ##
 ## Reads:  data/spp_names_codes_group_aou_taxa_redlist.csv
 ##         data/bird_traits/  (source files, downloaded on first run)
@@ -169,6 +170,7 @@ manual_split <- manual_invert$invert[match(spp$Common.Name, manual_invert$Common
 spp_diet <- spp %>%
   select(-sci_bbs) %>%
   mutate(diet = case_when(
+    primary_diet == "Scavenger"          ~ "Carnivore",
     primary_diet != "Invertebrate"       ~ primary_diet,
     avonet_niche %in% "Invertivore"      ~ "Terrestrial invertebrate",
     avonet_niche %in% "Aquatic predator" ~ "Aquatic invertebrate",
